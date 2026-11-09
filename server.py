@@ -333,7 +333,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             cur.execute("""
             SELECT 
                 cli.id_llamada, cli.denunciante, cli.cedula, cli.telefono_1, cli.telefono_2,
-                cli.municipio, cli.parroquia, cli.sector, cli.direccion, cli.tipo_contacto,
+                cli.municipio, cli.parroquia, cli.sector, cli.direccion, 
+                COALESCE(MAX(c.tipo_contacto), cli.tipo_contacto) as tipo_contacto,
                 MAX(c.fecha_generado) as fecha_aviso,
                 COUNT(c.id) as num_casos,
                 SUM(CASE WHEN c.estatus_llamada IS NOT NULL AND c.estatus_llamada != '' AND c.devuelto_flag = 0 THEN 1 ELSE 0 END) as auditados_en_grupo,

@@ -508,6 +508,8 @@
                 btnTotal.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-blue-600 text-white transition";
             }
             loadGlobalStats();
+            loadOperators();
+            loadParishes();
         }
 
         function triggerTxSpark() {
@@ -658,7 +660,8 @@
         async function loadGlobalStats() {
             if (isDemoMode) return;
             try {
-                const res = await fetch('/api/stats');
+                const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
+                const res = await fetch(`/api/stats?periodo=${p}`);
                 const data = await res.json();
 
                 document.getElementById('kpi-total').innerText = Number(data.tot_casos).toLocaleString();
@@ -684,7 +687,8 @@
         // Cargar Estadísticas de los 15 Operadores (Compacto para que quepan todos)
         async function loadOperators() {
             try {
-                const res = await fetch('/api/operators_stats');
+                const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
+                const res = await fetch(`/api/operators_stats?periodo=${p}`);
                 const ops = await res.json();
 
                 const grid = document.getElementById('operators-grid');
@@ -758,7 +762,8 @@
         // Cargar Parroquias Críticas con barras de fluido individuales
         async function loadParishes() {
             try {
-                const res = await fetch('/api/parish_stats');
+                const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
+                const res = await fetch(`/api/parish_stats?periodo=${p}`);
                 const parishes = await res.json();
                 const list = document.getElementById('parish-list');
                 list.innerHTML = '';

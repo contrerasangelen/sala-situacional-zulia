@@ -322,7 +322,7 @@
 
             let filtered = currentQueue;
             if (currentFilter === 'pendientes') filtered = currentQueue.filter(c => c.auditados_en_grupo < c.num_casos);
-            else if (currentFilter === 'reintentos') filtered = currentQueue.filter(c => c.tipo_contacto.includes('REINTENTO'));
+            else if (currentFilter === 'reintentos') filtered = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO'));
             else if (currentFilter === 'devueltos') filtered = currentQueue.filter(c => c.has_devueltos == 1);
 
             if (filtered.length === 0) {
