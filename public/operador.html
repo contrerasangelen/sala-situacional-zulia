@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estación de Operador - Sala Situacional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .custom-scroll::-webkit-scrollbar { width: 5px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- BARRA SUPERIOR DEL OPERARIO -->
+    <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-30 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow">
+                📞
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-400 uppercase font-bold tracking-wider">Estación de Llamadas</span>
+                    <span id="active-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">CONECTADO</span>
+                </div>
+                <h1 id="operator-display-name" class="text-base font-extrabold text-white">Seleccione su Perfil</h1>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <!-- Selector de Operador -->
+            <select id="operator-select" class="bg-slate-800 text-xs text-white border border-slate-700 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 font-semibold cursor-pointer" onchange="onOperatorChange()">
+                <option value="">-- Elige tu Nombre --</option>
+            </select>
+            <a href="/monitor" target="_blank" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 hidden sm:inline-block">📺 Pantalla Gigante</a>
+        </div>
+    </header>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
+        
+        <!-- PANEL IZQUIERDO: BANDEJA Y COLA DE CLIENTES (380px) -->
+        <aside class="w-full md:w-[380px] bg-slate-900/90 border-r border-slate-800 flex flex-col shrink-0">
+            <!-- Barra de progreso personal -->
+            <div class="p-3 border-b border-slate-800 bg-slate-900">
+                <div class="flex justify-between items-center text-xs mb-1">
+                    <span class="text-slate-400 font-medium">Avance de Clientes</span>
+                    <span id="progress-text" class="font-bold text-blue-400">0 / 0 (0%)</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div id="progress-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+
+                <!-- Filtros de la cola con contadores -->
+                <div class="flex gap-1 mt-2.5">
+                    <button onclick="setFilter('todos')" id="filter-todos" class="flex-1 py-1 text-[11px] font-bold rounded bg-blue-600 text-white">
+                        Todos <span id="cnt-todos" class="text-[10px] opacity-80">(0)</span>
+                    </button>
+                    <button onclick="setFilter('pendientes')" id="filter-pendientes" class="flex-1 py-1 text-[11px] font-bold rounded bg-slate-800 text-slate-300 hover:bg-slate-700">
+                        Pendientes <span id="cnt-pendientes" class="text-[10px] opacity-80">(0)</span>
+                    </button>
+                    <button onclick="setFilter('reintentos')" id="filter-reintentos" class="flex-1 py-1 text-[11px] font-bold rounded bg-slate-800 text-amber-400 hover:bg-slate-700">
+                        Reintentos <span id="cnt-reintentos" class="text-[10px] opacity-80">(0)</span>
+                    </button>
+                    <button onclick="setFilter('devueltos')" id="filter-devueltos" class="py-1 px-2 text-[11px] font-bold rounded bg-slate-800 text-rose-400 hover:bg-slate-700">
+                        🔔 <span id="cnt-devueltos" class="text-[10px] opacity-80">(0)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Lista de clientes scrollable -->
+            <div id="queue-container" class="flex-grow overflow-y-auto custom-scroll p-2 space-y-2">
+                <div class="p-8 text-center text-xs text-slate-500">Selecciona tu nombre en la parte superior para cargar tus llamadas.</div>
+            </div>
+        </aside>
+
+        <!-- PANEL DERECHO: FORMULARIO DE LLAMADA ACTIVA (Despliega todos los casos del ciudadano) -->
+        <main class="flex-grow flex flex-col bg-slate-950 overflow-y-auto custom-scroll p-4 lg:p-6">
+            
+            <!-- Estado vacío cuando no hay cliente seleccionado -->
+            <div id="empty-state" class="m-auto text-center p-8 max-w-md">
+                <div class="w-16 h-16 rounded-2xl bg-blue-600/10 text-blue-400 flex items-center justify-center mx-auto mb-3 text-3xl">
+                    📋
+                </div>
+                <h3 class="text-base font-bold text-white mb-1">Ningún Denunciante Seleccionado</h3>
+                <p class="text-xs text-slate-400">Selecciona un ciudadano en la lista de la izquierda para desplegar sus solicitudes y comenzar la llamada.</p>
+            </div>
+
+            <!-- Formulario activo de llamada -->
+            <div id="active-call-card" class="hidden flex flex-col gap-4 max-w-4xl mx-auto w-full">
+                
+                <!-- CABECERA DEL CIUDADANO CON TELÉFONOS EXTRA GRANDES -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 lg:p-6 shadow-xl">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div class="flex items-center gap-2">
+                            <span id="client-badge-reintento" class="px-2.5 py-1 rounded-md text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">REINTENTO</span>
+                            <span id="client-id" class="text-xs font-mono font-bold text-blue-400">CALL-OP01-0001</span>
+                            <span id="client-total-casos" class="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 text-slate-300">2 Casos</span>
+                        </div>
+                        <div id="devuelto-alert" class="hidden px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                            ⚠️ Caso devuelto por supervisor: <span id="devuelto-motivo-txt" class="font-normal italic"></span>
+                        </div>
+                    </div>
+
+                    <!-- Datos del denunciante -->
+                    <div class="mb-5 pb-4 border-b border-slate-800/80">
+                        <h2 id="client-name" class="text-2xl font-black text-white tracking-tight">Nombre del Denunciante</h2>
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400">
+                            <span>Cédula: <strong id="client-cedula" class="text-slate-200">V00000000</strong></span>
+                            <span>•</span>
+                            <span>📍 <strong id="client-location" class="text-slate-300">Maracaibo - F.E. Bustamante</strong></span>
+                            <span>•</span>
+                            <span>Dirección: <span id="client-address" class="text-slate-300 italic">Calle 100</span></span>
+                            <span>•</span>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                📅 Fecha Aviso: <strong id="client-creation-date" class="text-white font-mono">--/--/----</strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- BLOQUE DE TELÉFONOS EN TAMAÑO GIGANTE -->
+                    <div>
+                        <span class="block text-xs font-extrabold text-slate-300 uppercase tracking-widest mb-2">
+                            📞 Números Telefónicos para Marcar:
+                        </span>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Teléfono 1 (Principal) -->
+                            <div class="bg-gradient-to-b from-slate-900 to-emerald-950/80 border-2 border-emerald-500/60 rounded-2xl p-4 flex flex-col justify-between shadow-xl">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400">Teléfono 1 (Principal)</span>
+                                    <span class="text-[10px] text-emerald-300 font-extrabold bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">PRIORITARIO</span>
+                                </div>
+                                <div class="my-2 py-2 px-3 bg-slate-950/90 rounded-xl border border-emerald-500/40 text-center">
+                                    <a id="client-tel1" href="#" class="block text-2xl sm:text-3xl xl:text-4xl font-black text-emerald-300 font-mono tracking-wider hover:text-emerald-200 transition whitespace-nowrap overflow-hidden">
+                                        <span id="client-tel1-text">0424-000-00-00</span>
+                                    </a>
+                                </div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <button onclick="copyPhone('client-tel1-text')" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5">
+                                        📋 Copiar
+                                    </button>
+                                    <a id="client-tel1-btn" href="#" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5">
+                                        📞 Llamar
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- Teléfono 2 (Alternativo) -->
+                            <div class="bg-gradient-to-b from-slate-900 to-blue-950/70 border-2 border-blue-500/50 rounded-2xl p-4 flex flex-col justify-between shadow-xl">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-[11px] font-black uppercase tracking-wider text-blue-400">Teléfono 2 (Alternativo)</span>
+                                    <span class="text-[10px] text-blue-300 font-extrabold bg-blue-500/20 px-2 py-0.5 rounded-full border border-blue-500/30">OPCIÓN 2</span>
+                                </div>
+                                <div class="my-2 py-2 px-3 bg-slate-950/90 rounded-xl border border-blue-500/40 text-center">
+                                    <a id="client-tel2" href="#" class="block text-2xl sm:text-3xl xl:text-4xl font-black text-blue-300 font-mono tracking-wider hover:text-blue-200 transition whitespace-nowrap overflow-hidden">
+                                        <span id="client-tel2-text">0414-000-00-00</span>
+                                    </a>
+                                </div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <button onclick="copyPhone('client-tel2-text')" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5">
+                                        📋 Copiar
+                                    </button>
+                                    <a id="client-tel2-btn" href="#" class="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5">
+                                        📞 Llamar
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LISTADO DE CASOS DEL CIUDADANO (Para revisar todos en la misma llamada) -->
+                <div class="space-y-4">
+                    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                        <span>Revisión de Casos Asociados al Denunciante</span>
+                    </h3>
+
+                    <div id="cases-forms-container" class="space-y-4">
+                        <!-- Se generan dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- ALERTA DE COHERENCIA EN VIVO (Aparece si hay incongruencia al guardar) -->
+                <div id="coherence-warning-box" class="hidden bg-amber-950/80 border-2 border-amber-500 rounded-xl p-4 text-amber-200 shadow-xl animate-bounce-once">
+                    <div class="flex items-start gap-3">
+                        <span class="text-2xl">⚠️</span>
+                        <div class="flex-grow">
+                            <h4 class="font-bold text-sm text-amber-300">Alerta de Coherencia y Calidad en la Información:</h4>
+                            <p id="coherence-warning-text" class="text-xs mt-1 text-amber-200 font-medium"></p>
+                            <div class="mt-3 flex gap-2">
+                                <button onclick="focusIncoherentField()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow">
+                                    Corregir Ahora
+                                </button>
+                                <button onclick="confirmForceSave()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+                                    Guardar de Todas Formas con Justificación
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOTÓN PRINCIPAL DE GUARDADO -->
+                <div class="pt-2 pb-8 flex items-center justify-between border-t border-slate-800">
+                    <button onclick="skipClient()" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white transition">
+                        Saltar a Siguiente →
+                    </button>
+                    <button onclick="validateAndSaveCall()" id="btn-save-call" class="px-6 py-3 rounded-xl text-sm font-extrabold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 flex items-center gap-2 transition transform active:scale-95">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        GUARDAR LLAMADA Y SIGUIENTE CLIENTE
+                    </button>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- SCRIPT DE LA ESTACIÓN DEL OPERADOR -->
+    <script>
+        let currentOperatorId = localStorage.getItem('selected_operator_id') || "";
+        let currentQueue = [];
+        let activeClientIndex = -1;
+        let activeClientCases = [];
+        let currentFilter = 'todos';
+        let forceSaveAllowed = false;
+
+        // Formateador de fecha de creación del aviso (YYYY-MM-DD -> DD/MM/YYYY)
+        function formatCreationDate(dStr) {
+            if (!dStr) return 'No indicada';
+            try {
+                const parts = dStr.split('-');
+                if (parts.length === 3) {
+                    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                }
+            } catch(e) {}
+            return dStr;
+        }
+
+        // Cargar lista de operadores al iniciar
+        async function loadOperatorsList() {
+            try {
+                const res = await fetch('/api/operators_list');
+                const ops = await res.json();
+                const sel = document.getElementById('operator-select');
+                sel.innerHTML = '<option value="">-- Elige tu Nombre --</option>';
+                ops.forEach(op => {
+                    const opt = document.createElement('option');
+                    opt.value = op.id;
+                    opt.innerText = `${op.id}. ${op.nombre}`;
+                    if (op.id == currentOperatorId) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                if (currentOperatorId) onOperatorChange();
+            } catch (e) {
+                console.error("Error cargando operadores:", e);
+            }
+        }
+        loadOperatorsList();
+
+        function onOperatorChange() {
+            const sel = document.getElementById('operator-select');
+            currentOperatorId = sel.value;
+            if (!currentOperatorId) return;
+
+            localStorage.setItem('selected_operator_id', currentOperatorId);
+            const opName = sel.options[sel.selectedIndex].text;
+            document.getElementById('operator-display-name').innerText = opName;
+            loadOperatorQueue();
+        }
+
+        // Cargar cola de clientes del operador
+        async function loadOperatorQueue() {
+            if (!currentOperatorId) return;
+            try {
+                const res = await fetch(`/api/operator_queue?operator_id=${currentOperatorId}`);
+                currentQueue = await res.json();
+                renderQueue();
+                updateProgressBar();
+            } catch (e) {
+                console.error("Error cargando cola:", e);
+            }
+        }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            ['todos', 'pendientes', 'reintentos', 'devueltos'].forEach(f => {
+                const b = document.getElementById(`filter-${f}`);
+                if (f === filter) {
+                    b.className = "flex-1 py-1 text-[11px] font-bold rounded bg-blue-600 text-white shadow";
+                } else {
+                    const textColor = f === 'reintentos' ? 'text-amber-400' : (f === 'devueltos' ? 'text-rose-400' : 'text-slate-300');
+                    const flexClass = f === 'devueltos' ? 'py-1 px-2' : 'flex-1 py-1';
+                    b.className = `${flexClass} text-[11px] font-bold rounded bg-slate-800 ${textColor} hover:bg-slate-700`;
+                }
+            });
+            renderQueue();
+        }
+
+        function updateProgressBar() {
+            const tot = currentQueue.length;
+            const gest = currentQueue.filter(c => c.num_casos === c.auditados_en_grupo).length;
+            const pend = tot - gest;
+            const reint = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO') && c.auditados_en_grupo < c.num_casos).length;
+            const dev = currentQueue.filter(c => c.has_devueltos == 1).length;
+
+            const pct = tot > 0 ? Math.round((gest / tot) * 100) : 0;
+            document.getElementById('progress-text').innerText = `${gest} / ${tot} (${pct}%)`;
+            document.getElementById('progress-bar').style.width = `${pct}%`;
+
+            // Actualizar contadores en los botones
+            document.getElementById('cnt-todos').innerText = `(${tot})`;
+            document.getElementById('cnt-pendientes').innerText = `(${pend})`;
+            document.getElementById('cnt-reintentos').innerText = `(${reint})`;
+            document.getElementById('cnt-devueltos').innerText = `(${dev})`;
+        }
+
+        function renderQueue() {
+            const cont = document.getElementById('queue-container');
+            cont.innerHTML = '';
+
+            let filtered = currentQueue;
+            if (currentFilter === 'pendientes') filtered = currentQueue.filter(c => c.auditados_en_grupo < c.num_casos);
+            else if (currentFilter === 'reintentos') filtered = currentQueue.filter(c => c.tipo_contacto.includes('REINTENTO'));
+            else if (currentFilter === 'devueltos') filtered = currentQueue.filter(c => c.has_devueltos == 1);
+
+            if (filtered.length === 0) {
+                cont.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">No hay clientes en este filtro.</div>';
+                return;
+            }
+
+            filtered.forEach((cli, idx) => {
+                const isCompleted = (cli.num_casos === cli.auditados_en_grupo);
+                const isReintento = cli.tipo_contacto && cli.tipo_contacto.includes('REINTENTO');
+                const isDevuelto = cli.has_devueltos == 1;
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border cursor-pointer transition flex flex-col gap-1.5 ${
+                    isDevuelto ? 'bg-rose-950/40 border-rose-500/60 shadow-md shadow-rose-950/30' :
+                    (isCompleted ? 'bg-slate-900/60 border-slate-800 opacity-60' : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/60')
+                }`;
+                card.onclick = () => selectClient(cli.id_llamada);
+
+                let badgeHtml = '';
+                if (isDevuelto) {
+                    const devTxt = (cli.devueltos_count && cli.devueltos_count < cli.num_casos) 
+                        ? `${cli.devueltos_count}/${cli.num_casos} DEVUELTO` 
+                        : 'DEVUELTO';
+                    badgeHtml = `<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white animate-pulse">⚠️ ${devTxt}</span>`;
+                }
+                else if (isReintento) badgeHtml = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">REINTENTO</span>';
+                else badgeHtml = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300">NUEVO</span>';
+
+                const checkHtml = isCompleted ? '✅' : '⏳';
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="font-bold text-white truncate max-w-[180px]">${cli.denunciante}</span>
+                        <div class="flex items-center gap-1">${badgeHtml} <span>${checkHtml}</span></div>
+                    </div>
+                    ${isDevuelto && cli.devuelto_codigo ? `
+                    <div class="bg-rose-900/50 border border-rose-500/60 rounded-lg p-1.5 text-[11px] flex flex-col gap-0.5 my-0.5">
+                        <div class="flex items-center justify-between text-rose-200 font-bold">
+                            <span>🚨 Caso con problema:</span>
+                            <span class="font-mono text-amber-300 font-black">${cli.devuelto_codigo}</span>
+                        </div>
+                        <div class="text-[10px] text-rose-300/90 truncate italic">"${cli.devuelto_motivo || 'Requiere corrección'}"</div>
+                    </div>
+                    ` : ''}
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span class="truncate max-w-[130px]">${cli.parroquia}</span>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="text-amber-300/90 font-mono text-[10px]">📅 ${formatCreationDate(cli.fecha_aviso)}</span>
+                            <span class="font-bold text-slate-300">(${cli.num_casos})</span>
+                        </div>
+                    </div>
+                    <div class="text-[11px] font-mono text-emerald-400 truncate">
+                        ${cli.telefono_1 || 'Sin teléfono'}
+                    </div>
+                `;
+                cont.appendChild(card);
+            });
+        }
+
+        // Seleccionar y desplegar los casos del cliente
+        async function selectClient(id_llamada) {
+            try {
+                const res = await fetch(`/api/client_cases?id_llamada=${id_llamada}`);
+                activeClientCases = await res.json();
+                if (activeClientCases.length === 0) return;
+
+                const firstCase = activeClientCases[0];
+                document.getElementById('empty-state').classList.add('hidden');
+                document.getElementById('active-call-card').classList.remove('hidden');
+
+                // Llenar datos cabecera
+                document.getElementById('client-id').innerText = firstCase.id_llamada;
+                document.getElementById('client-name').innerText = firstCase.denunciante || 'Denunciante Sin Nombre';
+                document.getElementById('client-cedula').innerText = firstCase.cedula || 'V00000000';
+                document.getElementById('client-location').innerText = `${firstCase.municipio || ''} • ${firstCase.parroquia || ''} • ${firstCase.sector || ''}`;
+                document.getElementById('client-address').innerText = firstCase.direccion || 'Sin dirección registrada';
+                document.getElementById('client-creation-date').innerText = formatCreationDate(firstCase.fecha_generado);
+                document.getElementById('client-total-casos').innerText = `${activeClientCases.length} Caso(s)`;
+
+                // Badges
+                const isReintento = firstCase.tipo_contacto && firstCase.tipo_contacto.includes('REINTENTO');
+                document.getElementById('client-badge-reintento').style.display = isReintento ? 'inline-block' : 'none';
+
+                // Teléfonos Gigantes
+                const tel1 = firstCase.telefono_1 || "";
+                const tel2 = firstCase.telefono_2 || "";
+                
+                const tel1Clean = tel1.replace(/\D/g, '');
+                const tel2Clean = tel2.replace(/\D/g, '');
+
+                document.getElementById('client-tel1').href = tel1Clean ? `tel:${tel1Clean}` : '#';
+                document.getElementById('client-tel1-btn').href = tel1Clean ? `tel:${tel1Clean}` : '#';
+                document.getElementById('client-tel1-text').innerText = tel1 || 'No disponible';
+
+                document.getElementById('client-tel2').href = tel2Clean ? `tel:${tel2Clean}` : '#';
+                document.getElementById('client-tel2-btn').href = tel2Clean ? `tel:${tel2Clean}` : '#';
+                document.getElementById('client-tel2-text').innerText = tel2 || 'No registrado';
+
+                // Casos devueltos
+                const devCases = activeClientCases.filter(c => c.devuelto_flag == 1);
+                const devBox = document.getElementById('devuelto-alert');
+                if (devCases.length > 0) {
+                    const codes = devCases.map(c => c.codigo_caso).join(', ');
+                    const motivos = devCases.map(c => c.devuelto_motivo).filter(Boolean).join(' | ');
+                    document.getElementById('devuelto-motivo-txt').innerHTML = `
+                        <div class="flex flex-col gap-1 text-xs">
+                            <div><strong class="text-white">Caso(s) devuelto(s) para corregir:</strong> <span class="font-mono text-amber-300 font-bold">${codes}</span></div>
+                            <div><strong class="text-white">Instrucción del Supervisor:</strong> <span class="italic text-rose-200">"${motivos || 'Verificar y corregir datos'}"</span></div>
+                            ${activeClientCases.length > devCases.length ? `<div class="text-emerald-300 font-bold text-[11px] mt-0.5">ℹ️ Nota: Los otros ${activeClientCases.length - devCases.length} caso(s) de este denunciante ya fueron auditados y aprobados. Solo debes revisar y guardar el caso devuelto.</div>` : ''}
+                        </div>
+                    `;
+                    devBox.classList.remove('hidden');
+                } else {
+                    devBox.classList.add('hidden');
+                }
+
+                // Generar formulario por cada caso del ciudadano
+                renderCasesForms();
+                hideWarning();
+            } catch (e) {
+                console.error("Error seleccionando cliente:", e);
+            }
+        }
+
+        function renderCasesForms() {
+            const cont = document.getElementById('cases-forms-container');
+            cont.innerHTML = '';
+
+            // Casos que requieren atención (devueltos por supervisor o pendientes)
+            const casesToEdit = activeClientCases.filter(c => c.devuelto_flag == 1 || !c.estatus_llamada || c.estatus_llamada === '');
+            // Casos que ya están cerrados y aprobados (no devueltos)
+            const casesAlreadyApproved = activeClientCases.filter(c => c.devuelto_flag == 0 && c.estatus_llamada && c.estatus_llamada !== '');
+
+            // Actualizar contador en cabecera
+            if (casesAlreadyApproved.length > 0 && casesToEdit.length > 0) {
+                document.getElementById('client-total-casos').innerHTML = `
+                    <span class="text-rose-400 font-bold">${casesToEdit.length} Caso a Corregir</span>
+                    <span class="text-emerald-400 text-xs">(${casesAlreadyApproved.length} ya aprobados)</span>
+                `;
+            } else {
+                document.getElementById('client-total-casos').innerText = `${activeClientCases.length} Caso(s)`;
+            }
+
+            // Si hay casos aprobados y casos devueltos, renderizar SOLO los casos que tienen problema
+            const casesToRender = casesToEdit.length > 0 ? casesToEdit : activeClientCases;
+
+            casesToRender.forEach((c, idx) => {
+                const isDevuelto = (c.devuelto_flag == 1);
+                const isDesestimadoReabierto = (c.devuelto_motivo && c.devuelto_motivo.includes('DESESTIMADO'));
+
+                const cDiv = document.createElement('div');
+                cDiv.className = isDevuelto 
+                    ? "bg-slate-900 border-2 border-rose-500 rounded-2xl p-4 lg:p-5 flex flex-col gap-3 shadow-xl shadow-rose-950/40 relative" 
+                    : "bg-slate-900 border border-slate-800 rounded-2xl p-4 lg:p-5 flex flex-col gap-3 shadow";
+
+                cDiv.innerHTML = `
+                    <!-- Banner de Alerta Exclusivo para el Caso Devuelto -->
+                    ${isDevuelto ? `
+                    <div class="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-2 border-rose-500 rounded-xl p-3.5 flex items-start gap-3 shadow-lg">
+                        <span class="text-3xl animate-bounce">🚨</span>
+                        <div class="flex-grow">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 uppercase tracking-wide">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-rose-400 animate-ping"></span>
+                                    ${isDesestimadoReabierto ? 'CASO REGRESADO POR SUPERVISOR (PREVIAMENTE DESESTIMADO)' : 'ESTE ES EL CASO CON PROBLEMA DEVUELTO'}
+                                </span>
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-600 text-white animate-pulse">CORREGIR AQUÍ</span>
+                            </div>
+                            <div class="mt-2 text-xs text-rose-100 bg-black/60 p-2.5 rounded-lg border border-rose-500/40 font-medium">
+                                <strong class="text-amber-300">📌 Motivo / Instrucción del Supervisor:</strong>
+                                <p class="mt-0.5 text-white font-bold text-xs">${c.devuelto_motivo || 'Verificar y corregir los datos de este caso'}</p>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- Encabezado del caso -->
+                    <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-full ${isDevuelto ? 'bg-rose-600 text-white font-black' : 'bg-blue-600/30 text-blue-400'} font-bold text-xs flex items-center justify-center">${idx+1}</span>
+                            <span class="text-sm font-mono font-black text-white">${c.codigo_caso}</span>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-600/20 text-blue-300 border border-blue-500/30">${c.categoria_homologada}</span>
+                            ${isDevuelto ? '<span class="px-2.5 py-1 rounded-lg text-xs font-black bg-rose-600 text-white animate-pulse shadow">🚨 CASO A CORREGIR</span>' : ''}
+                        </div>
+                        <div class="flex items-center flex-wrap gap-2.5 text-xs">
+                            <span class="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold flex items-center gap-1.5 shadow-sm">
+                                📅 Fecha de Creación del Aviso: <strong class="text-white font-mono">${formatCreationDate(c.fecha_generado)}</strong>
+                            </span>
+                            <span class="text-xs text-slate-400 font-medium">Poste en Data: <strong class="text-slate-200 font-mono">${c.poste_detectado || 'No indicado'}</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- Descripción original de la queja -->
+                    <div class="text-xs text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 italic">
+                        "${c.descripcion_reporte || 'Sin descripción'}"
+                    </div>
+
+                    <!-- Campos de auditoría -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                        <!-- Estatus de llamada -->
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Estatus de Llamada *</label>
+                            <select id="case-status-${c.id}" class="w-full bg-slate-800 text-xs text-white border ${isDevuelto ? 'border-rose-400 ring-1 ring-rose-400' : 'border-slate-700'} rounded-lg p-2 font-semibold focus:ring-2 focus:ring-blue-500">
+                                <option value="">-- Seleccionar --</option>
+                                <option value="ATENDIDO" ${c.estatus_llamada === 'ATENDIDO' ? 'selected' : ''}>✅ ATENDIDO (Solventado)</option>
+                                <option value="SIN COMUNICACIÓN" ${c.estatus_llamada === 'SIN COMUNICACIÓN' ? 'selected' : ''}>📵 SIN COMUNICACIÓN</option>
+                                <option value="POR ATENDER" ${c.estatus_llamada === 'POR ATENDER' ? 'selected' : ''}>⏳ POR ATENDER (En proceso)</option>
+                                <option value="DESESTIMAR" ${c.estatus_llamada === 'DESESTIMAR' ? 'selected' : ''}>❌ DESESTIMAR</option>
+                                <option value="RECATEGORIZAR" ${c.estatus_llamada === 'RECATEGORIZAR' ? 'selected' : ''}>🔄 RECATEGORIZAR</option>
+                                <option value="ATENDIDO POR TERCEROS" ${c.estatus_llamada === 'ATENDIDO POR TERCEROS' ? 'selected' : ''}>👥 ATENDIDO POR TERCEROS</option>
+                                <option value="SOLICITA PICA Y PODA" ${c.estatus_llamada === 'SOLICITA PICA Y PODA' ? 'selected' : ''}>🌿 SOLICITA PICA Y PODA</option>
+                            </select>
+                        </div>
+
+                        <!-- ¿Este caso persiste? -->
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">¿Persiste Avería? *</label>
+                            <select id="case-persiste-${c.id}" class="w-full bg-slate-800 text-xs text-white border ${isDevuelto ? 'border-rose-400 ring-1 ring-rose-400' : 'border-slate-700'} rounded-lg p-2 font-semibold focus:ring-2 focus:ring-blue-500">
+                                <option value="">-- Seleccionar --</option>
+                                <option value="POR INSPECCIONAR" ${c.persiste === 'POR INSPECCIONAR' ? 'selected' : ''}>SÍ (Por Inspeccionar)</option>
+                                <option value="ATENDIDO" ${c.persiste === 'ATENDIDO' ? 'selected' : ''}>NO (Ya Solventado)</option>
+                                <option value="INSPECCIONADO" ${c.persiste === 'INSPECCIONADO' ? 'selected' : ''}>Inspeccionado en Campo</option>
+                                <option value="POR MATERIAL" ${c.persiste === 'POR MATERIAL' ? 'selected' : ''}>En Espera de Material/TX</option>
+                                <option value="DESESTIMAR" ${c.persiste === 'DESESTIMAR' ? 'selected' : ''}>Desestimar</option>
+                            </select>
+                        </div>
+
+                        <!-- ¿Requiere Campo? -->
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">¿Requiere Cuadrilla Campo? *</label>
+                            <select id="case-campo-${c.id}" class="w-full bg-slate-800 text-xs text-white border ${isDevuelto ? 'border-rose-400 ring-1 ring-rose-400' : 'border-slate-700'} rounded-lg p-2 font-semibold focus:ring-2 focus:ring-blue-500">
+                                <option value="">-- Seleccionar --</option>
+                                <option value="SI" ${c.requiere_campo === 'SI' ? 'selected' : ''}>SÍ (Enviar Cuadrilla)</option>
+                                <option value="NO" ${c.requiere_campo === 'NO' ? 'selected' : ''}>NO</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Observaciones y poste confirmado -->
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+                        <div class="sm:col-span-3">
+                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Observaciones de la Llamada / Testimonio</label>
+                            <input id="case-obs-${c.id}" type="text" value="${c.observaciones || ''}" placeholder="Ej. Se volvió a contactar al usuario..." class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Poste Confirmado</label>
+                            <input id="case-poste-${c.id}" type="text" value="${c.poste_confirmado || ''}" placeholder="Ej. P06N15" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 uppercase">
+                        </div>
+                    </div>
+                `;
+                cont.appendChild(cDiv);
+            });
+
+            // Si hay casos que ya estaban resueltos y aprobados, mostrarlos abajo como bloque informativo limpio
+            if (casesAlreadyApproved.length > 0 && casesToEdit.length > 0) {
+                const approvedDiv = document.createElement('div');
+                approvedDiv.className = "bg-slate-900/60 border border-slate-800 rounded-2xl p-4 mt-2";
+                approvedDiv.innerHTML = `
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-bold mb-2.5">
+                        <span class="text-emerald-400 flex items-center gap-1.5">
+                            <span>✅</span> ${casesAlreadyApproved.length} Caso(s) de este denunciante ya cerrados y aprobados (NO devueltos)
+                        </span>
+                        <span class="text-[10px] text-slate-500">Tus datos están seguros y no requieren cambios</span>
+                    </div>
+                    <div class="space-y-1.5">
+                        ${casesAlreadyApproved.map(cr => `
+                            <div class="flex items-center justify-between bg-slate-950/80 p-2.5 rounded-xl text-xs border border-slate-800/80">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono text-white font-bold">${cr.codigo_caso}</span>
+                                    <span class="text-slate-400 truncate max-w-[220px]">${cr.categoria_homologada}</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                        ${cr.estatus_llamada}
+                                    </span>
+                                    <span class="text-[10px] text-slate-400">${cr.persiste || ''}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                cont.appendChild(approvedDiv);
+            }
+        }
+
+        // MOTOR DE VALIDACIÓN Y CONTROL DE CALIDAD EN EL CLIENTE
+        function validateAndSaveCall() {
+            const updates = [];
+            let clientSideWarnings = [];
+
+            for (const c of activeClientCases) {
+                const isDevuelto = (c.devuelto_flag == 1);
+                const isPreviamenteAprobado = (!isDevuelto && c.estatus_llamada && c.estatus_llamada !== '');
+
+                let estEl = document.getElementById(`case-status-${c.id}`);
+                let perEl = document.getElementById(`case-persiste-${c.id}`);
+                let reqEl = document.getElementById(`case-campo-${c.id}`);
+                let obsEl = document.getElementById(`case-obs-${c.id}`);
+                let posteEl = document.getElementById(`case-poste-${c.id}`);
+
+                // Si estaba previamente aprobado y no está en el formulario, preservar valores existentes
+                let est = estEl ? estEl.value : c.estatus_llamada;
+                let per = perEl ? perEl.value : c.persiste;
+                let req = reqEl ? reqEl.value : c.requiere_campo;
+                let obs = obsEl ? obsEl.value : (c.observaciones || '');
+                let poste = posteEl ? posteEl.value : (c.poste_confirmado || '');
+
+                if (!est && !isPreviamenteAprobado) {
+                    alert(`Por favor selecciona el Estatus de Llamada para el caso devuelto / pendiente ${c.codigo_caso}.`);
+                    return;
+                }
+
+                // Chequeo de la regla de coherencia solicitada:
+                const obsLower = obs.toLowerCase();
+                const catUpper = (c.categoria_homologada || "").toUpperCase();
+
+                // 1. Caso de TX pero menciona poste corroído
+                if ((catUpper.includes('TX') || catUpper.includes('TRANSFORMADOR')) && 
+                    (obsLower.includes('poste corroido') || obsLower.includes('poste roto') || obsLower.includes('poste oxidado') || obsLower.includes('poste caido'))) {
+                    if (est !== 'RECATEGORIZAR') {
+                        clientSideWarnings.push(`Caso ${c.codigo_caso}: Es de Transformador (TX) pero la queja es de Poste Corroído. Se recomienda seleccionar estatus RECATEGORIZAR.`);
+                    }
+                }
+
+                // 2. Marcado como Atendido pero dice sin luz
+                if (est === 'ATENDIDO' && (obsLower.includes('sin luz') || obsLower.includes('sin electricidad') || obsLower.includes('aun persiste'))) {
+                    clientSideWarnings.push(`Caso ${c.codigo_caso}: Lo marcaste como ATENDIDO pero en la observación indicas que siguen sin luz.`);
+                }
+
+                // 3. Falla no persiste pero pide campo
+                if (per === 'ATENDIDO' && req === 'SI') {
+                    clientSideWarnings.push(`Caso ${c.codigo_caso}: Indicaste que la avería NO persiste pero marcaste que SÍ requiere cuadrilla en campo.`);
+                }
+
+                updates.push({
+                    id: c.id,
+                    codigo_caso: c.codigo_caso,
+                    categoria_homologada: c.categoria_homologada,
+                    estatus_llamada: est,
+                    persiste: per,
+                    requiere_campo: req,
+                    observaciones: obs,
+                    poste_confirmado: poste
+                });
+            }
+
+            // Si hay advertencias de calidad y no se forzó el guardado
+            if (clientSideWarnings.length > 0 && !forceSaveAllowed) {
+                showWarning(clientSideWarnings.join('<br>• '));
+                return;
+            }
+
+            // Enviar guardado al servidor
+            saveCallPayload(updates);
+        }
+
+        function showWarning(text) {
+            const box = document.getElementById('coherence-warning-box');
+            document.getElementById('coherence-warning-text').innerHTML = `• ${text}`;
+            box.classList.remove('hidden');
+            box.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function hideWarning() {
+            document.getElementById('coherence-warning-box').classList.add('hidden');
+            forceSaveAllowed = false;
+        }
+
+        function focusIncoherentField() {
+            hideWarning();
+            window.scrollTo({ top: 400, behavior: 'smooth' });
+        }
+
+        function confirmForceSave() {
+            forceSaveAllowed = true;
+            validateAndSaveCall();
+        }
+
+        async function saveCallPayload(updates) {
+            try {
+                const btn = document.getElementById('btn-save-call');
+                btn.disabled = true;
+                btn.innerText = "Guardando...";
+
+                const res = await fetch('/api/save_call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        operador_id: currentOperatorId,
+                        cases: updates
+                    })
+                });
+                const data = await res.json();
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> GUARDAR LLAMADA Y SIGUIENTE CLIENTE`;
+
+                if (data.success) {
+                    hideWarning();
+                    // Recargar cola y avanzar al siguiente
+                    await loadOperatorQueue();
+                    advanceToNextPending();
+                } else {
+                    alert("Error guardando llamada: " + (data.error || "Desconocido"));
+                }
+            } catch (e) {
+                console.error("Error guardando llamada:", e);
+                alert("Error de conexión al guardar.");
+            }
+        }
+
+        function copyPhone(elementId) {
+            const num = document.getElementById(elementId).innerText;
+            if (!num || num.includes('No')) return;
+            navigator.clipboard.writeText(num).then(() => {
+                alert(`Número copiado al portapapeles: ${num}`);
+            }).catch(() => {
+                prompt("Copia el número:", num);
+            });
+        }
+
+        function advanceToNextPending() {
+            const next = currentQueue.find(c => c.auditados_en_grupo < c.num_casos);
+            if (next) {
+                selectClient(next.id_llamada);
+            } else {
+                document.getElementById('empty-state').classList.remove('hidden');
+                document.getElementById('active-call-card').classList.add('hidden');
+                alert("¡Felicidades! Has completado todas las llamadas asignadas en tu bandeja.");
+            }
+        }
+
+        function skipClient() {
+            advanceToNextPending();
+        }
+    </script>
+</body>
+</html>

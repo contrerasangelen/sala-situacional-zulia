@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accesos Rápidos - Sala Situacional Corpoelec</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6">
+    <div class="max-w-4xl mx-auto space-y-6">
+        
+        <!-- CABECERA -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex items-center justify-between flex-wrap gap-4">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-3xl shadow-lg shadow-blue-600/30">
+                    ⚡
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black text-white">SALA SITUACIONAL CORPOELEC</h1>
+                    <p class="text-xs text-slate-400 font-semibold uppercase tracking-wider">1x10 del Buen Gobierno | Enlaces de Conexión</p>
+                </div>
+            </div>
+            <div class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5">
+                <span class="text-[11px] text-slate-400 block font-bold uppercase">Servidor Local / Red:</span>
+                <span id="current-host" class="text-sm font-mono font-bold text-emerald-400">localhost:8000</span>
+            </div>
+        </div>
+
+        <!-- MÓDULOS PRINCIPALES -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- PANTALLA GIGANTE -->
+            <a href="/monitor" target="_blank" class="bg-slate-900 border border-slate-800 hover:border-blue-500 rounded-2xl p-5 transition shadow flex items-center gap-4 group">
+                <div class="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                    📺
+                </div>
+                <div class="flex-grow">
+                    <h3 class="text-base font-black text-white group-hover:text-blue-400 transition">Pantalla Gigante de Sala (TV)</h3>
+                    <p class="text-xs text-slate-400">Monitoreo en tiempo real de los 15 operadores y transformador SCADA</p>
+                </div>
+                <span class="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-600 text-white">Abrir ↗</span>
+            </a>
+
+            <!-- SUPERVISOR -->
+            <a href="/supervisor" target="_blank" class="bg-slate-900 border border-slate-800 hover:border-indigo-500 rounded-2xl p-5 transition shadow flex items-center gap-4 group">
+                <div class="w-12 h-12 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                    🛡️
+                </div>
+                <div class="flex-grow">
+                    <h3 class="text-base font-black text-white group-hover:text-indigo-400 transition">Panel de Supervisión y Control</h3>
+                    <p class="text-xs text-slate-400">Auditoría de calidad, asignación inteligente y exportación Excel</p>
+                </div>
+                <span class="text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 text-white">Abrir ↗</span>
+            </a>
+        </div>
+
+        <!-- ESTACIONES DE LOS 15 OPERADORES -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow">
+            <div class="border-b border-slate-800 pb-3 mb-4 flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <span>📱 Estaciones de los 15 Operadores</span>
+                    </h2>
+                    <p class="text-xs text-slate-400">Haz clic en cada operador para abrir su módulo o copia el enlace para su máquina.</p>
+                </div>
+            </div>
+
+            <div id="grid-operadores" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <!-- Se llena dinámicamente -->
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const operadores = [
+            { id: 1, nombre: "ERIK" },
+            { id: 2, nombre: "KEIVER" },
+            { id: 3, nombre: "ESMERALDA" },
+            { id: 4, nombre: "YOENLI" },
+            { id: 5, nombre: "ALEJANDRO" },
+            { id: 6, nombre: "LEO" },
+            { id: 7, nombre: "WENDI" },
+            { id: 8, nombre: "CHAMBA" },
+            { id: 9, nombre: "DIGEISI" },
+            { id: 10, nombre: "JOSUE" },
+            { id: 11, nombre: "YUNEIRI" },
+            { id: 12, nombre: "DESSIRE" },
+            { id: 13, nombre: "OPERADOR 13" },
+            { id: 14, nombre: "OPERADOR 14" },
+            { id: 15, nombre: "OPERADOR 15" }
+        ];
+
+        const host = window.location.host || 'localhost:8000';
+        document.getElementById('current-host').innerText = host;
+
+        const grid = document.getElementById('grid-operadores');
+        operadores.forEach(op => {
+            const url = `http://${host}/operador?op=${op.id}`;
+            const card = document.createElement('div');
+            card.className = "bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2 hover:border-slate-700 transition";
+            card.innerHTML = `
+                <div class="flex items-center gap-2.5 truncate">
+                    <span class="w-7 h-7 rounded-lg bg-blue-600/20 text-blue-400 font-black text-xs flex items-center justify-center shrink-0 border border-blue-500/30">${op.id}</span>
+                    <span class="text-xs font-bold text-white truncate">${op.nombre}</span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button onclick="copiarEnlace('${url}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold border border-slate-700" title="Copiar enlace">
+                        📋 Copiar
+                    </button>
+                    <a href="${url}" target="_blank" class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold">
+                        Abrir
+                    </a>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        function copiarEnlace(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                alert("Enlace copiado al portapapeles:\n" + url);
+            }).catch(() => {
+                prompt("Copia este enlace:", url);
+            });
+        }
+    </script>
+</body>
+</html>
