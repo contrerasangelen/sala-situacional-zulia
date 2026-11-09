@@ -131,6 +131,9 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
         self.end_headers()
         self.wfile.write(res.encode('utf-8'))
 
@@ -337,14 +340,17 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 COALESCE(MAX(c.tipo_contacto), cli.tipo_contacto) as tipo_contacto,
                 MAX(c.fecha_generado) as fecha_aviso,
                 COUNT(c.id) as num_casos,
-                SUM(CASE WHEN c.estatus_llamada IS NOT NULL AND c.estatus_llamada != '' AND c.devuelto_flag = 0 THEN 1 ELSE 0 END) as auditados_en_grupo,
+                SUM(CASE WHEN c.estado_auditoria = 'GESTIONADO' AND c.devuelto_flag = 0 THEN 1 ELSE 0 END) as auditados_en_grupo,
                 MAX(c.devuelto_flag) as has_devueltos,
                 SUM(CASE WHEN c.devuelto_flag = 1 THEN 1 ELSE 0 END) as devueltos_count,
                 MAX(CASE WHEN c.devuelto_flag = 1 THEN c.codigo_caso ELSE NULL END) as devuelto_codigo,
                 MAX(CASE WHEN c.devuelto_flag = 1 THEN c.devuelto_motivo ELSE NULL END) as devuelto_motivo
             FROM clientes cli
             JOIN casos c ON cli.id_llamada = c.id_llamada
-            WHERE c.operador_id = ?
+            WHERE c.operador_id = ? AND (
+                c.estado_auditoria = 'PENDIENTE' 
+                OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00')
+            )
             GROUP BY cli.id_llamada
             ORDER BY 
                 has_devueltos DESC,

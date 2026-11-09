@@ -274,7 +274,7 @@
         async function loadOperatorQueue() {
             if (!currentOperatorId) return;
             try {
-                const res = await fetch(`/api/operator_queue?operator_id=${currentOperatorId}`);
+                const res = await fetch(`/api/operator_queue?operator_id=${currentOperatorId}&_t=${Date.now()}`);
                 currentQueue = await res.json();
                 renderQueue();
                 updateProgressBar();
@@ -301,8 +301,8 @@
         function updateProgressBar() {
             const tot = currentQueue.length;
             const gest = currentQueue.filter(c => c.num_casos === c.auditados_en_grupo).length;
-            const pend = tot - gest;
             const reint = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO') && c.auditados_en_grupo < c.num_casos).length;
+            const pend = currentQueue.filter(c => (!c.tipo_contacto || !c.tipo_contacto.includes('REINTENTO')) && c.auditados_en_grupo < c.num_casos).length;
             const dev = currentQueue.filter(c => c.has_devueltos == 1).length;
 
             const pct = tot > 0 ? Math.round((gest / tot) * 100) : 0;
@@ -321,9 +321,13 @@
             cont.innerHTML = '';
 
             let filtered = currentQueue;
-            if (currentFilter === 'pendientes') filtered = currentQueue.filter(c => c.auditados_en_grupo < c.num_casos);
-            else if (currentFilter === 'reintentos') filtered = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO'));
-            else if (currentFilter === 'devueltos') filtered = currentQueue.filter(c => c.has_devueltos == 1);
+            if (currentFilter === 'pendientes') {
+                filtered = currentQueue.filter(c => (!c.tipo_contacto || !c.tipo_contacto.includes('REINTENTO')) && c.auditados_en_grupo < c.num_casos);
+            } else if (currentFilter === 'reintentos') {
+                filtered = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO') && c.auditados_en_grupo < c.num_casos);
+            } else if (currentFilter === 'devueltos') {
+                filtered = currentQueue.filter(c => c.has_devueltos == 1);
+            }
 
             if (filtered.length === 0) {
                 cont.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">No hay clientes en este filtro.</div>';
@@ -386,7 +390,7 @@
         // Seleccionar y desplegar los casos del cliente
         async function selectClient(id_llamada) {
             try {
-                const res = await fetch(`/api/client_cases?id_llamada=${id_llamada}`);
+                const res = await fetch(`/api/client_cases?id_llamada=${id_llamada}&_t=${Date.now()}`);
                 activeClientCases = await res.json();
                 if (activeClientCases.length === 0) return;
 
