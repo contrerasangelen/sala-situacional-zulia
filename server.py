@@ -232,8 +232,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             cur.execute(f"""
             SELECT 
                 o.id, o.nombre, o.pestaña, o.ultima_actividad, o.activo,
-                COUNT(c.id) as tot_casos,
-                COUNT(DISTINCT c.id_llamada) as tot_clientes,
+                COUNT(CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00') THEN 1 END) as tot_casos,
+                COUNT(DISTINCT CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00') THEN c.id_llamada END) as tot_clientes,
                 SUM(CASE WHEN c.estatus_llamada IS NOT NULL AND c.estatus_llamada != '' {sub_date} THEN 1 ELSE 0 END) as auditados,
                 SUM(CASE WHEN c.estatus_llamada IN ('ATENDIDO', 'ATENDIDO POR TERCEROS') {sub_date} THEN 1 ELSE 0 END) as atendidos,
                 SUM(CASE WHEN c.estatus_llamada IN ('SIN COMUNICACIÓN', 'SIN INFORMACION') {sub_date} THEN 1 ELSE 0 END) as sin_com,
@@ -243,6 +243,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 SUM(CASE WHEN c.devuelto_flag = 1 THEN 1 ELSE 0 END) as devueltos
             FROM operadores o
             LEFT JOIN casos c ON o.id = c.operador_id
+            WHERE o.id <= 15
             GROUP BY o.id
             ORDER BY o.id
             """, date_params * 6 if sub_date else ())
