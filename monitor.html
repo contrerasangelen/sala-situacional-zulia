@@ -180,13 +180,25 @@
         <!-- COLUMNA IZQUIERDA Y CENTRAL: GRILLA DE LOS 15 OPERADORES (3 Columnas de ancho) -->
         <div class="lg:col-span-3 glass-card rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between overflow-hidden h-full">
             <div class="flex items-center justify-between pb-1.5 border-b border-slate-700/60 shrink-0">
-                <h2 class="text-xs sm:text-sm font-extrabold text-white flex items-center gap-2">
-                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-                    <span>MONITOREO DE LOS 15 OPERARIOS EN TIEMPO REAL</span>
-                </h2>
-                <div class="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-3">
-                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Activo</span>
-                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-600"></span> Pausa</span>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-xs sm:text-sm font-extrabold text-white flex items-center gap-2">
+                        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                        <span id="monitor-group-title">SALA SITUACIONAL - PRINCIPALES (1 a 15)</span>
+                    </h2>
+                    <span id="monitor-group-badge" class="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/30">15 TITULARES</span>
+                </div>
+
+                <!-- CONTROLES DE VISTA: PRINCIPALES (15), APOYO (10) O AUTO-ALTERNAR (25s) -->
+                <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 shadow-inner">
+                    <button onclick="setMonitorView('principal')" id="btn-view-principal" class="px-2.5 py-1 rounded-lg text-xs font-black bg-blue-600 text-white transition flex items-center gap-1 shadow-sm">
+                        🏢 Principales (15)
+                    </button>
+                    <button onclick="setMonitorView('apoyo')" id="btn-view-apoyo" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1">
+                        🤝 Apoyo (10)
+                    </button>
+                    <button onclick="setMonitorView('auto')" id="btn-view-auto" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-cyan-300 hover:text-white transition flex items-center gap-1" title="Alterna automáticamente entre Principal y Apoyo cada 25 segundos">
+                        🔄 Auto <span id="auto-timer-badge" class="ml-1 px-1.5 py-0.2 rounded bg-slate-950 text-cyan-300 text-[10px] font-mono border border-cyan-800">25s</span>
+                    </button>
                 </div>
             </div>
 
@@ -687,79 +699,195 @@
             }
         }
 
-        // Cargar Estadísticas de los 15 Operadores (Compacto para que quepan todos)
+                // ESTADO DE VISTA Y CARRUSEL DINÁMICO (PRINCIPAL 15 / APOYO 10)
+        let monitorViewMode = 'auto'; // 'principal', 'apoyo', or 'auto'
+        let currentDisplayGroup = 'principal'; // 'principal' or 'apoyo'
+        let autoCountdown = 25;
+        let lastLoadedOperators = [];
+
+        // Leer parámetro URL opcional: ?vista=principal | ?vista=apoyo | ?vista=auto
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlVista = (urlParams.get('vista') || urlParams.get('grupo') || '').toLowerCase();
+        if (urlVista === 'principal' || urlVista === 'titulares') {
+            monitorViewMode = 'principal';
+            currentDisplayGroup = 'principal';
+        } else if (urlVista === 'apoyo') {
+            monitorViewMode = 'apoyo';
+            currentDisplayGroup = 'apoyo';
+        } else if (urlVista === 'auto') {
+            monitorViewMode = 'auto';
+        }
+
+        function setMonitorView(mode) {
+            monitorViewMode = mode;
+            if (mode === 'principal') {
+                currentDisplayGroup = 'principal';
+            } else if (mode === 'apoyo') {
+                currentDisplayGroup = 'apoyo';
+            } else if (mode === 'auto') {
+                autoCountdown = 25;
+            }
+            updateViewButtonsUI();
+            renderOperatorsGrid();
+        }
+
+        function updateViewButtonsUI() {
+            const btnPrinc = document.getElementById('btn-view-principal');
+            const btnApoyo = document.getElementById('btn-view-apoyo');
+            const btnAuto = document.getElementById('btn-view-auto');
+            const timerBadge = document.getElementById('auto-timer-badge');
+
+            if (btnPrinc) {
+                btnPrinc.className = (monitorViewMode === 'principal')
+                    ? "px-2.5 py-1 rounded-lg text-xs font-black bg-blue-600 text-white transition flex items-center gap-1 shadow-sm"
+                    : "px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1";
+            }
+            if (btnApoyo) {
+                btnApoyo.className = (monitorViewMode === 'apoyo')
+                    ? "px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-600 text-white transition flex items-center gap-1 shadow-sm"
+                    : "px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1";
+            }
+            if (btnAuto) {
+                btnAuto.className = (monitorViewMode === 'auto')
+                    ? "px-2.5 py-1 rounded-lg text-xs font-black bg-gradient-to-r from-blue-600 to-emerald-600 text-white transition flex items-center gap-1 shadow-sm"
+                    : "px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-cyan-300 hover:text-white transition flex items-center gap-1";
+            }
+            if (timerBadge) {
+                if (monitorViewMode === 'auto') {
+                    timerBadge.style.display = 'inline-block';
+                    timerBadge.innerText = `${autoCountdown}s`;
+                } else {
+                    timerBadge.style.display = 'none';
+                }
+            }
+        }
+
+        // Timer de cuenta regresiva para carrusel automático
+        setInterval(() => {
+            if (monitorViewMode === 'auto') {
+                autoCountdown--;
+                const timerBadge = document.getElementById('auto-timer-badge');
+                if (timerBadge) timerBadge.innerText = `${autoCountdown}s`;
+                if (autoCountdown <= 0) {
+                    autoCountdown = 25;
+                    currentDisplayGroup = (currentDisplayGroup === 'principal' ? 'apoyo' : 'principal');
+                    renderOperatorsGrid();
+                }
+            }
+        }, 1000);
+
+        // Cargar Estadísticas de Operadores
         async function loadOperators() {
             try {
                 const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
                 const res = await fetch(`/api/operators_stats?periodo=${p}`);
-                const ops = await res.json();
-
-                const grid = document.getElementById('operators-grid');
-                grid.innerHTML = '';
-
-                ops.forEach(op => {
-                    const card = document.createElement('div');
-                    const topBorderColor = op.is_active ? "border-t-emerald-400" : "border-t-cyan-400";
-                    card.className = `bg-slate-900/95 hover:bg-slate-800/90 rounded-xl p-1.5 sm:p-2 border border-slate-600/90 border-t-[3px] ${topBorderColor} flex flex-col justify-between transition-all duration-200 shadow-md shadow-black/40 hover:border-cyan-300 h-full overflow-hidden`;
-                    
-                    const dotClass = op.is_active ? "bg-emerald-400 pulse-dot" : "bg-slate-600";
-                    const statusText = op.is_active ? "Llamando" : "Pausa";
-                    const statusTextColor = op.is_active ? "text-emerald-400" : "text-slate-400";
-                    
-                    let barColor = "bg-blue-500";
-                    if (op.pct_avance >= 50) barColor = "bg-emerald-500";
-                    else if (op.pct_avance >= 25) barColor = "bg-cyan-400";
-
-                    card.innerHTML = `
-                        <div class="flex flex-col justify-between">
-                            <!-- Cabecera: Nombre y Estado -->
-                            <div class="flex items-center justify-between mb-1 gap-1">
-                                <span class="text-xs sm:text-sm font-black text-white tracking-wide truncate max-w-[120px]">${op.id}. ${op.nombre}</span>
-                                <span class="flex items-center gap-1 text-[9px] font-extrabold ${statusTextColor} bg-slate-950 px-1.5 py-0.5 rounded-md border border-slate-700/80 shrink-0">
-                                    <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span> ${statusText}
-                                </span>
-                            </div>
-                            
-                            <!-- Avance General con Números Grandes -->
-                            <div class="flex items-baseline justify-between mb-0.5">
-                                <span class="text-[9px] font-black uppercase tracking-wider text-slate-400">Avance</span>
-                                <div class="font-mono flex items-baseline">
-                                    <span class="text-base sm:text-lg font-black text-cyan-300 leading-none">${op.auditados}</span>
-                                    <span class="text-xs text-slate-400 font-bold ml-0.5">/${op.tot_casos}</span>
-                                    <span class="text-[9px] font-black text-cyan-400/80 ml-1">(${op.pct_avance}%)</span>
-                                </div>
-                            </div>
-
-                            <!-- Barra de progreso -->
-                            <div class="w-full bg-slate-950 rounded-full h-1.5 mb-1 overflow-hidden border border-slate-700/60">
-                                <div class="${barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${Math.min(op.pct_avance, 100)}%"></div>
-                            </div>
-                        </div>
-
-                        <!-- Cajas Métricas con Números Grandes y Alto Contraste (ATEND, SIN COM, CAMPO) -->
-                        <div class="grid grid-cols-3 gap-1 pt-1 border-t border-slate-600/80 text-center shrink-0">
-                            <!-- Atendidos -->
-                            <div class="bg-emerald-950/70 border border-emerald-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
-                                <span class="block text-[8px] sm:text-[9px] font-black uppercase text-emerald-300 tracking-wider">Atend</span>
-                                <span class="text-base sm:text-lg font-black text-emerald-400 font-mono leading-none">${op.atendidos}</span>
-                            </div>
-                            <!-- Sin Comunicación -->
-                            <div class="bg-amber-950/70 border border-amber-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
-                                <span class="block text-[8px] sm:text-[9px] font-black uppercase text-amber-300 tracking-wider">Sin Com</span>
-                                <span class="text-base sm:text-lg font-black text-amber-400 font-mono leading-none">${op.sin_com}</span>
-                            </div>
-                            <!-- Campo -->
-                            <div class="bg-rose-950/70 border border-rose-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
-                                <span class="block text-[8px] sm:text-[9px] font-black uppercase text-rose-300 tracking-wider">Campo</span>
-                                <span class="text-base sm:text-lg font-black text-rose-400 font-mono leading-none">${op.campo}</span>
-                            </div>
-                        </div>
-                    `;
-                    grid.appendChild(card);
-                });
+                lastLoadedOperators = await res.json();
+                renderOperatorsGrid();
             } catch (err) {
                 console.error("Error cargando operadores:", err);
             }
+        }
+
+        // Renderizar la Grilla según el grupo activo (Principal o Apoyo)
+        function renderOperatorsGrid() {
+            updateViewButtonsUI();
+            const grid = document.getElementById('operators-grid');
+            if (!grid) return;
+
+            const isPrincipal = (currentDisplayGroup === 'principal');
+            const targetOps = lastLoadedOperators.filter(op => {
+                if (op.id === 99) return false;
+                return isPrincipal ? (op.id <= 15) : (op.id > 15);
+            });
+
+            // Actualizar Título y Badge
+            const titleEl = document.getElementById('monitor-group-title');
+            const badgeEl = document.getElementById('monitor-group-badge');
+            if (titleEl) {
+                titleEl.innerText = isPrincipal 
+                    ? "SALA SITUACIONAL - PRINCIPALES (1 a 15)" 
+                    : "SALA SITUACIONAL - PERSONAL DE APOYO (1 a 10)";
+            }
+            if (badgeEl) {
+                if (isPrincipal) {
+                    badgeEl.innerText = "15 TITULARES";
+                    badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/30";
+                } else {
+                    badgeEl.innerText = "10 PERSONAL DE APOYO";
+                    badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse";
+                }
+            }
+
+            // Adaptar cuadrícula: 3 filas x 5 col para 15 titulares, 2 filas x 5 col para 10 de apoyo
+            if (isPrincipal) {
+                grid.className = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 grid-rows-3 gap-2 flex-grow min-h-0 h-full overflow-hidden transition-all duration-300";
+            } else {
+                grid.className = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 grid-rows-2 gap-2 flex-grow min-h-0 h-full overflow-hidden transition-all duration-300";
+            }
+
+            grid.innerHTML = '';
+            targetOps.forEach(op => {
+                const card = document.createElement('div');
+                const topBorderColor = isPrincipal
+                    ? (op.is_active ? "border-t-emerald-400" : "border-t-cyan-400")
+                    : (op.is_active ? "border-t-emerald-400" : "border-t-amber-400");
+                card.className = `bg-slate-900/95 hover:bg-slate-800/90 rounded-xl p-1.5 sm:p-2 border border-slate-600/90 border-t-[3px] ${topBorderColor} flex flex-col justify-between transition-all duration-200 shadow-md shadow-black/40 hover:border-cyan-300 h-full overflow-hidden`;
+                
+                const dotClass = op.is_active ? "bg-emerald-400 pulse-dot" : "bg-slate-600";
+                const statusText = op.is_active ? "Llamando" : "Pausa";
+                const statusTextColor = op.is_active ? "text-emerald-400" : "text-slate-400";
+                
+                let barColor = isPrincipal ? "bg-blue-500" : "bg-emerald-500";
+                if (op.pct_avance >= 50) barColor = "bg-emerald-500";
+                else if (op.pct_avance >= 25) barColor = "bg-cyan-400";
+
+                card.innerHTML = `
+                    <div class="flex flex-col justify-between">
+                        <!-- Cabecera: Nombre y Estado -->
+                        <div class="flex items-center justify-between mb-1 gap-1">
+                            <span class="text-xs sm:text-sm font-black text-white tracking-wide truncate max-w-[120px]">${op.id}. ${op.nombre}</span>
+                            <span class="flex items-center gap-1 text-[9px] font-extrabold ${statusTextColor} bg-slate-950 px-1.5 py-0.5 rounded-md border border-slate-700/80 shrink-0">
+                                <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span> ${statusText}
+                            </span>
+                        </div>
+                        
+                        <!-- Avance General con Números Grandes -->
+                        <div class="flex items-baseline justify-between mb-0.5">
+                            <span class="text-[9px] font-black uppercase tracking-wider text-slate-400">Avance</span>
+                            <div class="font-mono flex items-baseline">
+                                <span class="text-base sm:text-lg font-black text-cyan-300 leading-none">${op.auditados}</span>
+                                <span class="text-xs text-slate-400 font-bold ml-0.5">/${op.tot_casos}</span>
+                                <span class="text-[9px] font-black text-cyan-400/80 ml-1">(${op.pct_avance}%)</span>
+                            </div>
+                        </div>
+
+                        <!-- Barra de progreso -->
+                        <div class="w-full bg-slate-950 rounded-full h-1.5 mb-1 overflow-hidden border border-slate-700/60">
+                            <div class="${barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${Math.min(op.pct_avance, 100)}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Cajas Métricas con Números Grandes y Alto Contraste (ATEND, SIN COM, CAMPO) -->
+                    <div class="grid grid-cols-3 gap-1 pt-1 border-t border-slate-600/80 text-center shrink-0">
+                        <!-- Atendidos -->
+                        <div class="bg-emerald-950/70 border border-emerald-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
+                            <span class="block text-[8px] sm:text-[9px] font-black uppercase text-emerald-300 tracking-wider">Atend</span>
+                            <span class="text-base sm:text-lg font-black text-emerald-400 font-mono leading-none">${op.atendidos}</span>
+                        </div>
+                        <!-- Sin Comunicación -->
+                        <div class="bg-amber-950/70 border border-amber-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
+                            <span class="block text-[8px] sm:text-[9px] font-black uppercase text-amber-300 tracking-wider">Sin Com</span>
+                            <span class="text-base sm:text-lg font-black text-amber-400 font-mono leading-none">${op.sin_com}</span>
+                        </div>
+                        <!-- Campo -->
+                        <div class="bg-rose-950/70 border border-rose-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
+                            <span class="block text-[8px] sm:text-[9px] font-black uppercase text-rose-300 tracking-wider">Campo</span>
+                            <span class="text-base sm:text-lg font-black text-rose-400 font-mono leading-none">${op.campo}</span>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
         }
 
         // Cargar Parroquias Críticas con barras de fluido individuales

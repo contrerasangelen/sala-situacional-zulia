@@ -138,14 +138,34 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
         if path.startswith("/api/"):
             self.handle_api_get(path, query)
         else:
-            if path == "/" or path == "/monitor":
-                self.path = "/monitor.html"
-            elif path == "/operador":
-                self.path = "/operador.html"
-            elif path == "/supervisor":
-                self.path = "/supervisor.html"
-            elif path == "/accesos":
-                self.path = "/accesos.html"
+            filename_map = {
+                "/": "monitor.html",
+                "/monitor": "monitor.html",
+                "/monitor.html": "monitor.html",
+                "/operador": "operador.html",
+                "/operador.html": "operador.html",
+                "/supervisor": "supervisor.html",
+                "/supervisor.html": "supervisor.html",
+                "/accesos": "accesos.html",
+                "/accesos.html": "accesos.html",
+            }
+            if path in filename_map:
+                fname = filename_map[path]
+                target_file = os.path.join(PUBLIC_DIR, fname)
+                if not os.path.exists(target_file):
+                    target_file = os.path.join(BASE_DIR, fname)
+                if os.path.exists(target_file):
+                    with open(target_file, "rb") as f:
+                        data = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                    self.send_header('Pragma', 'no-cache')
+                    self.send_header('Expires', '0')
+                    self.send_header('Content-Length', str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
             super().do_GET()
 
     def do_POST(self):
