@@ -534,6 +534,7 @@
                                 <option value="">-- Seleccionar --</option>
                                 <option value="ATENDIDO" ${c.estatus_llamada === 'ATENDIDO' ? 'selected' : ''}>✅ ATENDIDO (Solventado)</option>
                                 <option value="SIN COMUNICACIÓN" ${c.estatus_llamada === 'SIN COMUNICACIÓN' ? 'selected' : ''}>📵 SIN COMUNICACIÓN</option>
+                                <option value="SIN INFORMACIÓN" ${c.estatus_llamada === 'SIN INFORMACIÓN' || c.estatus_llamada === 'SIN INFORMACION' ? 'selected' : ''}>❓ SIN INFORMACIÓN</option>
                                 <option value="POR ATENDER" ${c.estatus_llamada === 'POR ATENDER' ? 'selected' : ''}>⏳ POR ATENDER (En proceso)</option>
                                 <option value="DESESTIMAR" ${c.estatus_llamada === 'DESESTIMAR' ? 'selected' : ''}>❌ DESESTIMAR</option>
                                 <option value="RECATEGORIZAR" ${c.estatus_llamada === 'RECATEGORIZAR' ? 'selected' : ''}>🔄 RECATEGORIZAR</option>
@@ -576,6 +577,21 @@
                             <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Poste Confirmado</label>
                             <input id="case-poste-${c.id}" type="text" value="${c.poste_confirmado || ''}" placeholder="Ej. P06N15" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 uppercase">
                         </div>
+                    </div>
+
+                    <!-- Interruptor Consecutivo en Línea -->
+                    <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between bg-slate-950/70 px-3 py-2 rounded-xl border border-slate-800/60">
+                        <div class="flex items-center gap-2">
+                            <span class="text-base text-amber-400">⚡</span>
+                            <div>
+                                <span class="text-xs font-bold text-amber-300">Crear Consecutivo en Línea</span>
+                                <p class="text-[10px] text-slate-400">Marcar si requiere cuadrilla de atención prioritaria inmediata en campo</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="case-consecutivo-${c.id}" class="sr-only peer" ${c.consecutivo_linea == 1 ? 'checked' : ''}>
+                            <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                        </label>
                     </div>
                 `;
                 cont.appendChild(cDiv);
@@ -662,6 +678,9 @@
                     clientSideWarnings.push(`Caso ${c.codigo_caso}: Indicaste que la avería NO persiste pero marcaste que SÍ requiere cuadrilla en campo.`);
                 }
 
+                const consecutivoEl = document.getElementById(`case-consecutivo-${c.id}`);
+                const consecutivoVal = (consecutivoEl && consecutivoEl.checked) ? 1 : 0;
+
                 updates.push({
                     id: c.id,
                     codigo_caso: c.codigo_caso,
@@ -670,7 +689,8 @@
                     persiste: per,
                     requiere_campo: req,
                     observaciones: obs,
-                    poste_confirmado: poste
+                    poste_confirmado: poste,
+                    consecutivo_linea: consecutivoVal
                 });
             }
 

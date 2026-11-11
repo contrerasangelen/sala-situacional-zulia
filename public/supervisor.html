@@ -27,6 +27,10 @@
         </div>
 
         <div class="flex items-center flex-wrap gap-2">
+            <!-- Botón Consecutivos en Línea para Campo -->
+            <button onclick="descargarConsecutivosLinea()" class="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow transition flex items-center gap-1.5">
+                ⚡ Consecutivos en Línea <span id="badge-consecutivos-header" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-900 text-amber-300 font-black">0</span>
+            </button>
             <!-- Botón de Excel para Recategorizar -->
             <button onclick="exportRecategorizacionExcel()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow transition flex items-center gap-1.5">
                 🔄 Excel Recategorizar
@@ -421,6 +425,7 @@
                 else b.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700";
             });
             loadDashboardData();
+            updateConsecutivosBadge();
         }
 
         function applyCustomDateRange() {
@@ -435,6 +440,7 @@
                 document.getElementById(`p-${p}`).className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700";
             });
             loadDashboardData();
+            updateConsecutivosBadge();
         }
 
         async function loadDashboardData() {
@@ -643,6 +649,7 @@
                     `;
                     resBox.classList.remove('hidden');
                     loadDashboardData();
+            updateConsecutivosBadge();
                 } else {
                     resBox.className = "mt-4 p-4 rounded-xl border bg-rose-950/40 border-rose-500/60 text-rose-200 text-xs";
                     resBox.innerHTML = `<strong>Error:</strong> ${data.error || 'Desconocido'}`;
@@ -752,6 +759,7 @@
                 alert("Caso devuelto al operador para corrección.");
                 loadInconsistencias();
                 loadDashboardData();
+            updateConsecutivosBadge();
             }
         }
 
@@ -765,6 +773,7 @@
             if (data.success) {
                 loadInconsistencias();
                 loadDashboardData();
+            updateConsecutivosBadge();
             }
         }
 
@@ -793,6 +802,7 @@
             if (data.success) {
                 alert(`¡Éxito! Se reasignaron ${data.reassigned_clients} clientes.`);
                 loadDashboardData();
+            updateConsecutivosBadge();
             }
         }
 
@@ -873,6 +883,7 @@
                     closeEditOperatorModal();
                     // Refrescar tabla del supervisor y checkboxes de asignación
                     loadDashboardData();
+            updateConsecutivosBadge();
                     if (typeof loadActiveOperatorsCheckboxes === 'function') {
                         loadActiveOperatorsCheckboxes();
                     }
@@ -903,6 +914,7 @@
                 if (result.success) {
                     alert("✅ Sistema restablecido con éxito. Todas las pruebas han sido eliminadas y el sistema está 100% en cero para el lunes.");
                     loadDashboardData();
+            updateConsecutivosBadge();
                 } else {
                     alert("Error: " + (result.error || "No se pudo restablecer"));
                 }
@@ -982,9 +994,14 @@
                         "${r.observaciones || 'Desestimado por el operador sin motivo registrado'}"
                     </td>
                     <td class="p-3 text-center whitespace-nowrap">
-                        <button onclick="reabrirCaso(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white border border-slate-700 transition flex items-center gap-1 mx-auto shadow-sm" title="Reabrir caso y regresarlo a la cola de pendientes">
-                            🔄 Reabrir
-                        </button>
+                        <div class="flex items-center justify-center gap-1.5">
+                            <button onclick="devolverDesestimado(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-sm flex items-center gap-1" title="Devolver al operador con motivo para corregir">
+                                ↩️ Devolver
+                            </button>
+                            <button onclick="aprobarDesestimado(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm flex items-center gap-1" title="Aprobar formalmente la desestimación">
+                                ✔️ Aprobar
+                            </button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1026,6 +1043,7 @@
                     alert(`✅ Caso ${codigo} devuelto al operador con éxito.\n\nEl operador verá la alerta en su módulo identificando que el caso fue regresado.`);
                     loadDesestimados();
                     loadDashboardData();
+            updateConsecutivosBadge();
                 } else {
                     alert("Error al regresar caso: " + (data.error || 'Desconocido'));
                 }
@@ -1049,6 +1067,7 @@
         }
 
         loadDashboardData();
+            updateConsecutivosBadge();
         setInterval(loadDashboardData, 6000);
     </script>
 
