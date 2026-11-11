@@ -32,6 +32,30 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def init_db_schema():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cols = [r[1] for r in cur.execute("PRAGMA table_info(casos)").fetchall()]
+        if "consecutivo_linea" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_linea INTEGER DEFAULT 0")
+        if "consecutivo_impreso" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_impreso INTEGER DEFAULT 0")
+        if "consecutivo_fecha_impresion" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_fecha_impresion TEXT")
+        if "desestimado_aprobado" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN desestimado_aprobado INTEGER DEFAULT 0")
+        if "inconsistencia_aprobada" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN inconsistencia_aprobada INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception as e:
+        print("Schema init notice:", e)
+    finally:
+        conn.close()
+
+init_db_schema()
+
+
 # Formateo nacional de teléfonos
 def format_phone(val):
     if not val:
@@ -349,7 +373,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             FROM clientes cli
             JOIN casos c ON cli.id_llamada = c.id_llamada
             WHERE c.operador_id = ? AND (
-                c.estado_auditoria = 'PENDIENTE' 
+                c.devuelto_flag = 1
+                OR c.estado_auditoria IN ('PENDIENTE', 'DEVUELTO_CORRECCION')
                 OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00')
             )
             GROUP BY cli.id_llamada
@@ -387,12 +412,127 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             SELECT c.*, o.nombre as operador_nombre
             FROM casos c
             JOIN operadores o ON c.operador_id = o.id
-            WHERE c.inconsistencia_flag = 1 OR c.estatus_llamada = 'RECATEGORIZAR'
+            WHERE (c.inconsistencia_flag = 1 OR c.estatus_llamada = 'RECATEGORIZAR')
+              AND c.devuelto_flag = 0
+              AND (c.inconsistencia_aprobada = 0 OR c.inconsistencia_aprobada IS NULL)
             ORDER BY c.actualizado_en DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
             conn.close()
             self.send_json(rows)
+
+        # Consecutivos en Línea: Contador de Pendientes
+        elif path == "/api/consecutivos_pendientes_count":
+            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
+            p = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1")
+            tot = cur.fetchone()[0]
+            conn.close()
+            self.send_json({"pendientes": p, "total": tot})
+
+        # Exportar Consecutivos en Línea a Excel (Descarga directa y marca impresos)
+        elif path == "/api/export_consecutivos_linea":
+            import io
+            tipo = query.get("tipo", ["pendientes"])[0]
+            now_dt = datetime.now()
+            fecha_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+            fecha_tag = now_dt.strftime("%Y%m%d_%H%M%S")
+
+            where_sql = "WHERE c.consecutivo_linea = 1"
+            if tipo == "pendientes":
+                where_sql += " AND (c.consecutivo_impreso = 0 OR c.consecutivo_impreso IS NULL)"
+
+            cur.execute(f"""
+            SELECT c.*, o.nombre as operador_nombre
+            FROM casos c
+            JOIN operadores o ON c.operador_id = o.id
+            {where_sql}
+            ORDER BY c.actualizado_en DESC, c.municipio, c.parroquia
+            """)
+            rows = cur.fetchall()
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Consecutivos Campo"
+            ws.views.sheetView[0].showGridLines = True
+
+            headers = [
+                "N°", "ID_CASO", "CÓDIGO CASO", "OPERADOR", "MUNICIPIO", "PARROQUIA",
+                "SECTOR", "DIRECCIÓN", "POSTE CONFIRMADO", "POSTE DETECTADO",
+                "DENUNCIANTE", "CÉDULA", "TELÉFONO 1", "TELÉFONO 2",
+                "ESTATUS LLAMADA", "¿PERSISTE?", "REQUIERE CAMPO", "FECHA CONTACTO",
+                "CATEGORÍA", "OBSERVACIÓN DETALLADA / NOVEDAD", "FECHA DESPACHO"
+            ]
+            ws.append(headers)
+
+            font_head = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+            fill_head = PatternFill(start_color="D97706", end_color="D97706", fill_type="solid")
+            for c_i in range(1, len(headers) + 1):
+                c = ws.cell(row=1, column=c_i)
+                c.font = font_head
+                c.fill = fill_head
+                c.alignment = Alignment(horizontal="center", vertical="center")
+
+            case_ids_to_mark = []
+            for idx, r in enumerate(rows, start=1):
+                case_ids_to_mark.append(r["id"])
+                ws.append([
+                    idx,
+                    r["id"],
+                    r["codigo_caso"],
+                    r["operador_nombre"],
+                    r["municipio"],
+                    r["parroquia"],
+                    r["sector"],
+                    r["direccion"],
+                    r["poste_confirmado"] or "",
+                    r["poste_detectado"] or "",
+                    r["denunciante"],
+                    r["cedula"],
+                    r["telefono_1"],
+                    r["telefono_2"],
+                    r["estatus_llamada"],
+                    r["persiste"],
+                    r["requiere_campo"],
+                    r["fecha_contacto"],
+                    r["categoria_homologada"],
+                    r["observaciones"],
+                    r["consecutivo_fecha_impresion"] or fecha_str
+                ])
+
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, 11), 60)
+
+            if tipo == "pendientes" and case_ids_to_mark:
+                placeholders = ",".join(["?"] * len(case_ids_to_mark))
+                cur.execute(f"""
+                UPDATE casos SET 
+                    consecutivo_impreso = 1,
+                    consecutivo_fecha_impresion = ?
+                WHERE id IN ({placeholders})
+                """, [fecha_str] + case_ids_to_mark)
+                conn.commit()
+
+            conn.close()
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            data_bytes = buf.getvalue()
+            wb.close()
+
+            filename = f"CONSECUTIVOS_LINEA_{fecha_tag}.xlsx"
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Content-Length', str(len(data_bytes)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(data_bytes)
+            return
 
         # 10. Buscador de casos
         elif path == "/api/search_case":
@@ -470,7 +610,9 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             SELECT c.*, o.nombre as operador_nombre
             FROM casos c
             JOIN operadores o ON c.operador_id = o.id
-            WHERE c.estatus_llamada = 'DESESTIMAR' OR c.persiste = 'DESESTIMAR'
+            WHERE (c.estatus_llamada = 'DESESTIMAR' OR c.persiste = 'DESESTIMAR')
+              AND c.devuelto_flag = 0
+              AND (c.desestimado_aprobado = 0 OR c.desestimado_aprobado IS NULL)
             ORDER BY c.actualizado_en DESC, c.id DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
@@ -564,6 +706,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 incons_flag = 1 if len(warns) > 0 else 0
                 incons_motivo = "; ".join(warns) if warns else None
 
+                consecutivo_val = int(cu.get("consecutivo_linea", 0))
                 cur.execute("""
                 UPDATE casos SET 
                     estatus_llamada = ?,
@@ -576,9 +719,10 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                     inconsistencia_flag = ?,
                     inconsistencia_motivo = ?,
                     devuelto_flag = 0,
+                    consecutivo_linea = ?,
                     actualizado_en = ?
                 WHERE id = ? AND operador_id = ?
-                """, (est, persiste, campo, now_str[:10], obs, poste_conf, incons_flag, incons_motivo, now_str, c_id, op_id))
+                """, (est, persiste, campo, now_str[:10], obs, poste_conf, incons_flag, incons_motivo, consecutivo_val, now_str, c_id, op_id))
 
                 if warns:
                     warnings_total.extend(warns)
@@ -602,6 +746,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 devuelto_flag = 1,
                 devuelto_motivo = ?,
                 inconsistencia_flag = 0,
+                inconsistencia_aprobada = 0,
                 estado_auditoria = 'DEVUELTO_CORRECCION'
             WHERE id = ?
             """, (motivo, caso_id))
@@ -688,13 +833,46 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.close()
             self.send_json({"success": True, "message": "Caso regresado al operario con aviso explícito de devolución."})
 
+        # Aprobar / Ratificar caso desestimado
+        elif path == "/api/supervisor/aprobar_desestimado":
+            caso_id = data.get("caso_id")
+            if not caso_id:
+                conn.close()
+                self.send_json({"error": "Falta caso_id"}, 400)
+                return
+
+            cur.execute("""
+            UPDATE casos SET 
+                desestimado_aprobado = 1,
+                devuelto_flag = 0,
+                estado_auditoria = 'GESTIONADO'
+            WHERE id = ?
+            """, (caso_id,))
+
+            cur.execute("""
+            INSERT INTO logs (operador_id, tipo_accion, detalle)
+            VALUES (0, 'DESESTIMACION_APROBADA', ?)
+            """, (f"Supervisor ratificó y aprobó desestimación del caso #{caso_id}",))
+
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True, "message": "Caso desestimado aprobado formalmente."})
+
         # Aprobar caso inconsistente
         elif path == "/api/supervisor/aprobar":
             caso_id = data.get("caso_id")
-            cur.execute("UPDATE casos SET inconsistencia_flag = 0, devuelto_flag = 0 WHERE id = ?", (caso_id,))
+            cur.execute("""
+            UPDATE casos SET 
+                inconsistencia_flag = 0, 
+                devuelto_flag = 0, 
+                inconsistencia_aprobada = 1,
+                inconsistencia_motivo = NULL,
+                estado_auditoria = 'GESTIONADO'
+            WHERE id = ?
+            """, (caso_id,))
             conn.commit()
             conn.close()
-            self.send_json({"success": True})
+            self.send_json({"success": True, "message": "Caso aprobado formalmente."})
 
         # Reasignación básica manual
         elif path == "/api/supervisor/reasignar":

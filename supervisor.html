@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Supervisión - Sala Situacional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0b132b; color: #f8fafc; }
+        .custom-scroll::-webkit-scrollbar { width: 5px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 lg:p-6">
+
+    <!-- CABECERA SUPERVISOR -->
+    <header class="flex flex-col md:flex-row items-center justify-between pb-4 border-b border-slate-700/60 mb-5 gap-3">
+        <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30 text-xl">
+                🛡️
+            </div>
+            <div>
+                <h1 class="text-xl lg:text-2xl font-black text-white">PANEL DE CONTROL DEL SUPERVISOR</h1>
+                <p class="text-xs text-slate-400 font-medium">Asignación Inteligente, Cruce de Data, Métricas y Calidad | Sala Situacional</p>
+            </div>
+        </div>
+
+        <div class="flex items-center flex-wrap gap-2">
+            <!-- Botón Consecutivos en Línea para Campo -->
+            <button onclick="descargarConsecutivosLinea()" class="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow transition flex items-center gap-1.5">
+                ⚡ Consecutivos en Línea <span id="badge-consecutivos-header" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-900 text-amber-300 font-black">0</span>
+            </button>
+            <!-- Botón de Excel para Recategorizar -->
+            <button onclick="exportRecategorizacionExcel()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow transition flex items-center gap-1.5">
+                🔄 Excel Recategorizar
+            </button>
+            <button onclick="exportLiveExcel()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow transition flex items-center gap-1.5">
+                📥 Consolidado General
+            </button>
+            <a href="/monitor" target="_blank" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+                📺 Pantalla Gigante
+            </a>
+            <a href="/operador" target="_blank" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+                📱 Estación Operador
+            </a>
+        </div>
+    </header>
+
+    <!-- NAVEGACIÓN POR PESTAÑAS -->
+    <nav class="flex gap-2 border-b border-slate-800 pb-3 mb-5 overflow-x-auto custom-scroll">
+        <button onclick="switchTab('tab-operadores')" id="btn-tab-operadores" class="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white flex items-center gap-2 shadow">
+            📊 Rendimiento y Períodos
+        </button>
+        <button onclick="switchTab('tab-asignacion')" id="btn-tab-asignacion" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+            ⚡ Cruce de Data y Asignación (3 a 15 Ops)
+        </button>
+        <button onclick="switchTab('tab-calidad')" id="btn-tab-calidad" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+            ⚠️ Auditoría y Alertas de Calidad <span id="badge-inconsistencias-tab" class="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-extrabold hidden">0</span>
+        </button>
+        <button onclick="switchTab('tab-desestimar')" id="btn-tab-desestimar" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+            🚫 Casos Desestimados <span id="badge-desestimar-tab" class="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-extrabold hidden">0</span>
+        </button>
+        <button onclick="switchTab('tab-reasignacion')" id="btn-tab-reasignacion" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+            🔄 Reasignación Rápida
+        </button>
+        <button onclick="switchTab('tab-busqueda')" id="btn-tab-busqueda" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+            🔍 Buscador Universal
+        </button>
+    </nav>
+
+    <!-- PESTAÑA 1: TABLERO DE OPERADORES Y ANÁLISIS POR PERÍODOS (DIARIO, SEMANAL, MENSUAL) -->
+    <section id="tab-operadores" class="space-y-4">
+        
+        <!-- BARRA DE FILTRO TEMPORAL -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Período de Análisis:</span>
+                <div class="flex gap-1.5">
+                    <button onclick="setPeriod('diario')" id="p-diario" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">📅 Hoy (Diario)</button>
+                    <button onclick="setPeriod('semanal')" id="p-semanal" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">🗓️ Esta Semana</button>
+                    <button onclick="setPeriod('mensual')" id="p-mensual" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">📆 Este Mes</button>
+                    <button onclick="setPeriod('historico')" id="p-historico" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow">🌐 Todo el Histórico</button>
+                </div>
+            </div>
+
+            <!-- Rango personalizado -->
+            <div class="flex items-center gap-2 text-xs">
+                <span class="text-slate-400 font-medium">Rango:</span>
+                <input id="filter-desde" type="date" class="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1 font-semibold">
+                <span class="text-slate-500">hasta</span>
+                <input id="filter-hasta" type="date" class="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1 font-semibold">
+                <button onclick="applyCustomDateRange()" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold">Filtrar</button>
+            </div>
+        </div>
+
+        <!-- TARJETAS DE RESUMEN DEL PERÍODO -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 border-l-4 border-l-blue-500">
+                <span class="text-[11px] text-slate-400 font-bold uppercase">Casos Gestionados</span>
+                <div class="text-2xl font-black text-white mt-1" id="sum-gest">0</div>
+                <span class="text-[10px] text-slate-400" id="sum-avance">0% del total</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 border-l-4 border-l-emerald-500">
+                <span class="text-[11px] text-slate-400 font-bold uppercase">Solventados / Atendidos</span>
+                <div class="text-2xl font-black text-emerald-400 mt-1" id="sum-atend">0</div>
+                <span class="text-[10px] text-emerald-300" id="sum-efec">0% efectividad</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 border-l-4 border-l-amber-500">
+                <span class="text-[11px] text-slate-400 font-bold uppercase">Sin Comunicación</span>
+                <div class="text-2xl font-black text-amber-400 mt-1" id="sum-sin">0</div>
+                <span class="text-[10px] text-amber-300">Rellamadas necesarias</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 border-l-4 border-l-rose-500">
+                <span class="text-[11px] text-slate-400 font-bold uppercase">Requieren Cuadrilla Campo</span>
+                <div class="text-2xl font-black text-rose-400 mt-1" id="sum-campo">0</div>
+                <span class="text-[10px] text-rose-300">Averías activas confirmadas</span>
+            </div>
+        </div>
+
+        <!-- MATRIZ DE LOS 15 OPERADORES -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow">
+            <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+                <h3 class="text-sm font-bold text-white uppercase tracking-wider">Desempeño Individual de Operadores en el Período</h3>
+                <span class="text-xs text-slate-400">Actualización en vivo</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-800/80 text-[11px] uppercase font-bold text-slate-400">
+                        <tr>
+                            <th class="p-3">Operador</th>
+                            <th class="p-3">Estado</th>
+                            <th class="p-3">Última Llamada</th>
+                            <th class="p-3 text-center">Clientes</th>
+                            <th class="p-3 text-center">Casos Totales</th>
+                            <th class="p-3 text-center">Auditados</th>
+                            <th class="p-3 text-center">% Avance</th>
+                            <th class="p-3 text-center">Solventados</th>
+                            <th class="p-3 text-center">% Efectividad</th>
+                            <th class="p-3 text-center">Sin Com.</th>
+                            <th class="p-3 text-center">Por Atender</th>
+                            <th class="p-3 text-center">Campo</th>
+                            <th class="p-3 text-center">Alertas Calidad</th>
+                            <th class="p-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-operators-body" class="divide-y divide-slate-800">
+                        <!-- Llenado dinámico -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- PESTAÑA 2: CARGA, CRUCE DE ARCHIVO ZULIA Y ASIGNACIÓN INTELIGENTE (3 a 15 OPERADORES) -->
+    <section id="tab-asignacion" class="hidden space-y-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-4xl mx-auto shadow">
+            <div class="border-b border-slate-800 pb-3 mb-5">
+                <h3 class="text-lg font-black text-white flex items-center gap-2">
+                    <span>⚡ Asignación Inteligente y Cruce de Data (ZULIA.xlsx)</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">Cruza la nueva descarga de casos con la base de datos previa, detecta solicitudes no atendidas y las reparte entre los operadores activos bajo múltiples criterios.</p>
+            </div>
+
+            <!-- PASO 1: SELECCIONAR ARCHIVO -->
+            <div class="mb-5 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <label class="block text-xs font-bold text-slate-300 uppercase mb-2">1. Seleccionar Archivo Nuevo para Cruzar:</label>
+                <div class="flex gap-2">
+                    <select id="file-select" class="flex-grow bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-3 font-semibold"></select>
+                    <button onclick="refreshAvailableFiles()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-bold border border-slate-700">🔄 Buscar</button>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1.5 italic">Se buscan archivos .xlsx en la carpeta Descargas y en el proyecto.</p>
+            </div>
+
+            <!-- PASO 2: SELECCIONAR OPERADORES ACTIVOS -->
+            <div class="mb-5 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="text-xs font-bold text-slate-300 uppercase">2. Seleccionar Operadores Activos Hoy (¿Quiénes vinieron a trabajar?):</label>
+                    <div class="flex gap-2">
+                        <button onclick="toggleAllOps(true)" class="text-[11px] text-blue-400 font-bold hover:underline">Marcar Todos (15)</button>
+                        <span class="text-slate-600">|</span>
+                        <button onclick="toggleAllOps(false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                    </div>
+                </div>
+
+                <div id="ops-checkboxes" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mt-3">
+                    <!-- Se llena con los 15 operadores -->
+                </div>
+            </div>
+
+            <!-- PASO 3: CRITERIO DE DISTRIBUCIÓN -->
+            <div class="mb-6 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <label class="block text-xs font-bold text-slate-300 uppercase mb-2">3. Criterio de Distribución de los Casos:</label>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-700 bg-slate-800/60 cursor-pointer hover:border-blue-500 transition">
+                        <input type="radio" name="criteria" value="EQUILIBRADO" checked class="mt-1 text-blue-600">
+                        <div>
+                            <span class="block text-xs font-bold text-white">⚖️ Equitativo General</span>
+                            <span class="text-[11px] text-slate-400">Reparto parejo de clientes y casos entre los operadores activos.</span>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-700 bg-slate-800/60 cursor-pointer hover:border-blue-500 transition">
+                        <input type="radio" name="criteria" value="POR_CATEGORIA_TX" class="mt-1 text-blue-600">
+                        <div>
+                            <span class="block text-xs font-bold text-amber-400">⚡ Especializado en TX</span>
+                            <span class="text-[11px] text-slate-400">Averías de Transformadores a un grupo y el resto a los demás.</span>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-700 bg-slate-800/60 cursor-pointer hover:border-blue-500 transition">
+                        <input type="radio" name="criteria" value="POR_MUNICIPIO" class="mt-1 text-blue-600">
+                        <div>
+                            <span class="block text-xs font-bold text-cyan-400">📍 Por Municipio</span>
+                            <span class="text-[11px] text-slate-400">Maracaibo, San Francisco y Cabimas divididos por territorio.</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- BOTÓN DE ACCIÓN -->
+            <div>
+                <button onclick="executeCrossAndAssign()" id="btn-cross-assign" class="w-full py-4 rounded-xl text-sm font-black bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl shadow-blue-600/30 transition transform active:scale-95 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    CRUZAR ARCHIVO Y ASIGNAR CASOS A OPERADORES ACTIVOS
+                </button>
+            </div>
+
+            <div id="assign-result-box" class="hidden mt-4 p-4 rounded-xl border"></div>
+        </div>
+    </section>
+
+    <!-- PESTAÑA 3: BANDEJA DE AUDITORÍA Y CONTROL DE CALIDAD -->
+    <section id="tab-calidad" class="hidden space-y-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+            <div class="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 mb-4 gap-3">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <span>Bandeja de Inconsistencias y Casos para Recategorizar</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Alertas automáticas donde la respuesta del operador no concuerda con la avería (ej. caso TX con poste corroído).</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="exportRecategorizacionExcel()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow flex items-center gap-1.5">
+                        📥 Descargar Excel para Recategorizar
+                    </button>
+                    <button onclick="loadInconsistencias()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+                        Refrescar
+                    </button>
+                </div>
+            </div>
+
+            <div id="inconsistencias-container" class="space-y-3">
+                <div class="p-6 text-center text-xs text-slate-500">Cargando inconsistencias...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- PESTAÑA: BANDEJA DE CASOS DESESTIMADOS -->
+    <section id="tab-desestimar" class="hidden space-y-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+            
+            <!-- Cabecera de la sección -->
+            <div class="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 mb-4 gap-3">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+                        <span>Bandeja de Casos Desestimados</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">
+                        Listado de casos donde el operador marcó estatus <strong>DESESTIMAR</strong>. Puedes revisar los motivos reportados, revertir/reabrir casos a estado PENDIENTE, o descargar el informe formal en Excel.
+                    </p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="exportDesestimadosExcel()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow flex items-center gap-1.5 transition">
+                        📥 Descargar Excel Desestimados
+                    </button>
+                    <button onclick="loadDesestimados()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+                        🔄 Refrescar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mini Tarjetas de Resumen de Desestimados -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-400 uppercase">Total Desestimados</span>
+                        <div id="desestimar-total-count" class="text-xl font-black text-rose-400">0</div>
+                    </div>
+                    <span class="text-2xl">🚫</span>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <span class="text-[11px] font-bold text-slate-400 uppercase">Operadores que Desestimaron</span>
+                        <div id="desestimar-ops-count" class="text-xl font-black text-white">0</div>
+                    </div>
+                    <span class="text-2xl">👥</span>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div class="w-full">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase block mb-1">Filtro Rápido en Tabla</span>
+                        <input id="desestimar-filter-input" type="text" placeholder="Buscar por código, denunciante, operador..." oninput="filterDesestimadosTable()" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rose-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla de Casos Desestimados -->
+            <div class="overflow-x-auto rounded-xl border border-slate-800">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-800/90 text-[11px] uppercase font-bold text-slate-400">
+                        <tr>
+                            <th class="p-3">Código Caso</th>
+                            <th class="p-3">Operador</th>
+                            <th class="p-3">Fecha Contacto</th>
+                            <th class="p-3">Denunciante / Cédula</th>
+                            <th class="p-3">Teléfono</th>
+                            <th class="p-3">Municipio / Parroquia</th>
+                            <th class="p-3">Categoría</th>
+                            <th class="p-3">Motivo / Observación del Operador</th>
+                            <th class="p-3 text-center">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="desestimados-table-body" class="divide-y divide-slate-800 bg-slate-900/50">
+                        <tr>
+                            <td colspan="9" class="p-8 text-center text-xs text-slate-500">Cargando casos desestimados...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- PESTAÑA 4: REASIGNACIÓN RÁPIDA -->
+    <section id="tab-reasignacion" class="hidden space-y-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl mx-auto shadow">
+            <h3 class="text-base font-bold text-white mb-2">Reasignación Rápida de Clientes y Casos</h3>
+            <p class="text-xs text-slate-400 mb-5">Transfiere denunciantes pendientes entre operadores en tiempo real durante la jornada.</p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Transferir desde Operador (Origen):</label>
+                    <select id="reassign-from" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-3 font-semibold"></select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Asignar a Operador (Destino):</label>
+                    <select id="reassign-to" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-3 font-semibold"></select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Cantidad de Denunciantes Pendientes a Transferir:</label>
+                    <input id="reassign-count" type="number" value="10" min="1" max="100" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-3 font-semibold">
+                </div>
+
+                <div class="pt-3">
+                    <button onclick="executeReassignment()" class="w-full py-3.5 rounded-xl text-sm font-extrabold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition">
+                        TRANSFERIR CLIENTES AHORA
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- PESTAÑA 5: BUSCADOR UNIVERSAL -->
+    <section id="tab-busqueda" class="hidden space-y-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+            <h3 class="text-base font-bold text-white mb-2">Buscador y Trazabilidad de Reclamos</h3>
+            <div class="flex gap-2 mb-4">
+                <input id="search-input" type="text" placeholder="Escribe el Código de Caso (SP-...), Cédula, Nombre o Teléfono..." class="flex-grow bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 font-semibold" onkeyup="if(event.key==='Enter') executeSearch()">
+                <button onclick="executeSearch()" class="px-5 py-3 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white shadow transition">
+                    Buscar
+                </button>
+            </div>
+
+            <div id="search-results" class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-800 text-[11px] uppercase font-bold text-slate-400">
+                        <tr>
+                            <th class="p-2.5">Código Caso</th>
+                            <th class="p-2.5">Operador</th>
+                            <th class="p-2.5">Denunciante</th>
+                            <th class="p-2.5">Cédula</th>
+                            <th class="p-2.5">Teléfono</th>
+                            <th class="p-2.5">Parroquia</th>
+                            <th class="p-2.5">Categoría</th>
+                            <th class="p-2.5">Estatus</th>
+                            <th class="p-2.5">Observación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="search-table-body" class="divide-y divide-slate-800">
+                        <tr><td colspan="9" class="p-6 text-center text-xs text-slate-500">Ingresa un término de búsqueda para ver resultados.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        let operatorsData = [];
+        let currentPeriod = 'historico';
+        let customDesde = '';
+        let customHasta = '';
+
+        function switchTab(tabId) {
+            ['tab-operadores', 'tab-asignacion', 'tab-calidad', 'tab-desestimar', 'tab-reasignacion', 'tab-busqueda'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+                document.getElementById(`btn-${id}`).className = "px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2";
+            });
+            document.getElementById(tabId).classList.remove('hidden');
+            document.getElementById(`btn-${tabId}`).className = "px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white flex items-center gap-2 shadow";
+
+            if (tabId === 'tab-calidad') loadInconsistencias();
+            if (tabId === 'tab-desestimar') loadDesestimados();
+            if (tabId === 'tab-asignacion') refreshAvailableFiles();
+        }
+
+        function setPeriod(period) {
+            currentPeriod = period;
+            customDesde = '';
+            customHasta = '';
+            ['diario', 'semanal', 'mensual', 'historico'].forEach(p => {
+                const b = document.getElementById(`p-${p}`);
+                if (p === period) b.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow";
+                else b.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700";
+            });
+            loadDashboardData();
+            updateConsecutivosBadge();
+        }
+
+        function applyCustomDateRange() {
+            customDesde = document.getElementById('filter-desde').value;
+            customHasta = document.getElementById('filter-hasta').value;
+            if (!customDesde || !customHasta) {
+                alert("Por favor selecciona ambas fechas.");
+                return;
+            }
+            currentPeriod = 'custom';
+            ['diario', 'semanal', 'mensual', 'historico'].forEach(p => {
+                document.getElementById(`p-${p}`).className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700";
+            });
+            loadDashboardData();
+            updateConsecutivosBadge();
+        }
+
+        async function loadDashboardData() {
+            let urlParams = `?periodo=${currentPeriod}`;
+            if (currentPeriod === 'custom') urlParams += `&desde=${customDesde}&hasta=${customHasta}`;
+
+            try {
+                // 1. Estadísticas Generales del Período
+                const resStats = await fetch(`/api/stats${urlParams}`);
+                const stats = await resStats.json();
+
+                document.getElementById('sum-gest').innerText = Number(stats.casos_auditados).toLocaleString();
+                document.getElementById('sum-avance').innerText = `${stats.pct_avance}% del universo (${stats.casos_pendientes} pendientes)`;
+                document.getElementById('sum-atend').innerText = Number(stats.casos_atendidos).toLocaleString();
+                document.getElementById('sum-efec').innerText = `${stats.pct_efectividad}% efectividad`;
+                document.getElementById('sum-sin').innerText = Number(stats.casos_sin_com).toLocaleString();
+                document.getElementById('sum-campo').innerText = Number(stats.casos_requieren_campo).toLocaleString();
+
+                // 2. Operadores en el Período
+                const resOps = await fetch(`/api/operators_stats${urlParams}`);
+                operatorsData = await resOps.json();
+
+                const tbody = document.getElementById('table-operators-body');
+                tbody.innerHTML = '';
+
+                let totCasos = 0, totAud = 0, totAtend = 0, totSin = 0, totPor = 0, totCamp = 0, totIncons = 0;
+
+                operatorsData.forEach(op => {
+                    totCasos += (op.tot_casos || 0);
+                    totAud += (op.auditados || 0);
+                    totAtend += (op.atendidos || 0);
+                    totSin += (op.sin_com || 0);
+                    totPor += (op.por_atender || 0);
+                    totCamp += (op.campo || 0);
+                    totIncons += (op.inconsistencias || 0);
+
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-800/40 transition";
+                    tr.innerHTML = `
+                        <td class="p-3 font-bold text-white flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full ${op.is_active ? 'bg-emerald-400' : 'bg-slate-600'}"></span>
+                            ${op.id}. ${op.nombre}
+                        </td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${op.activo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}">${op.activo ? 'ACTIVO' : 'INACTIVO'}</span></td>
+                        <td class="p-3 font-mono text-[11px] text-slate-400">${op.ultima_actividad ? op.ultima_actividad.slice(11) : 'Sin llamadas'}</td>
+                        <td class="p-3 text-center">${op.tot_clientes}</td>
+                        <td class="p-3 text-center font-bold">${op.tot_casos}</td>
+                        <td class="p-3 text-center font-black text-cyan-400">${op.auditados}</td>
+                        <td class="p-3 text-center font-bold">${op.pct_avance}%</td>
+                        <td class="p-3 text-center font-black text-emerald-400">${op.atendidos}</td>
+                        <td class="p-3 text-center font-bold text-emerald-300">${op.pct_efectividad}%</td>
+                        <td class="p-3 text-center font-bold text-amber-400">${op.sin_com}</td>
+                        <td class="p-3 text-center font-bold text-blue-400">${op.por_atender}</td>
+                        <td class="p-3 text-center font-bold text-rose-400">${op.campo}</td>
+                        <td class="p-3 text-center font-bold ${op.inconsistencias > 0 ? 'text-purple-400 bg-purple-950/20' : 'text-slate-500'}">${op.inconsistencias}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="openEditOperatorModal(${op.id}, '${op.nombre.replace(/'/g, "\\'")}', ${op.activo ? 1 : 0})" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700 transition flex items-center gap-1 mx-auto shadow-sm">
+                                ✏️ Modificar
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                // Totales
+                const trTot = document.createElement('tr');
+                trTot.className = "bg-slate-800 font-extrabold text-white";
+                const pctTotAvance = totCasos ? Math.round(totAud / totCasos * 100) : 0;
+                const pctTotEfec = totAud ? Math.round(totAtend / totAud * 100) : 0;
+                trTot.innerHTML = `
+                    <td class="p-3">TOTAL GENERAL</td>
+                    <td class="p-3">-</td>
+                    <td class="p-3">-</td>
+                    <td class="p-3 text-center">-</td>
+                    <td class="p-3 text-center">${totCasos}</td>
+                    <td class="p-3 text-center text-cyan-300">${totAud}</td>
+                    <td class="p-3 text-center">${pctTotAvance}%</td>
+                    <td class="p-3 text-center text-emerald-300">${totAtend}</td>
+                    <td class="p-3 text-center text-emerald-300">${pctTotEfec}%</td>
+                    <td class="p-3 text-center text-amber-300">${totSin}</td>
+                    <td class="p-3 text-center text-blue-300">${totPor}</td>
+                    <td class="p-3 text-center text-rose-300">${totCamp}</td>
+                    <td class="p-3 text-center text-purple-300">${totIncons}</td>
+                    <td class="p-3 text-center">-</td>
+                `;
+                tbody.appendChild(trTot);
+
+                // Badge de inconsistencias
+                const badge = document.getElementById('badge-inconsistencias-tab');
+                if (totIncons > 0) {
+                    badge.innerText = totIncons;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+
+                // Badge de desestimados
+                const badgeDes = document.getElementById('badge-desestimar-tab');
+                if (stats.casos_desestimados && stats.casos_desestimados > 0) {
+                    badgeDes.innerText = stats.casos_desestimados;
+                    badgeDes.classList.remove('hidden');
+                } else {
+                    badgeDes.classList.add('hidden');
+                }
+
+                populateReassignSelects();
+                populateOpsCheckboxes();
+            } catch (e) {
+                console.error("Error cargando dashboard:", e);
+            }
+        }
+
+        // Cargar Checkboxes de Operadores Activos para Asignación
+        function populateOpsCheckboxes() {
+            const cont = document.getElementById('ops-checkboxes');
+            if (cont.children.length > 0) return; // ya cargado
+            cont.innerHTML = '';
+
+            operatorsData.forEach(op => {
+                const label = document.createElement('label');
+                label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-blue-500 text-xs text-white";
+                label.innerHTML = `
+                    <input type="checkbox" value="${op.id}" class="op-checkbox text-blue-600 rounded" checked>
+                    <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
+                `;
+                cont.appendChild(label);
+            });
+        }
+
+        function toggleAllOps(checked) {
+            document.querySelectorAll('.op-checkbox').forEach(cb => cb.checked = checked);
+        }
+
+        // Cargar Archivos Disponibles para Cruce
+        async function refreshAvailableFiles() {
+            try {
+                const res = await fetch('/api/supervisor/available_files');
+                const files = await res.json();
+                const sel = document.getElementById('file-select');
+                sel.innerHTML = '';
+
+                if (files.length === 0) {
+                    sel.innerHTML = '<option value="">No se encontraron archivos .xlsx</option>';
+                    return;
+                }
+
+                files.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.ruta;
+                    opt.innerText = `📁 [${f.carpeta}] ${f.nombre}`;
+                    if (f.nombre.toUpperCase().includes('ZULIA')) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            } catch (e) {
+                console.error("Error buscando archivos:", e);
+            }
+        }
+
+        // Ejecutar Cruce y Asignación Inteligente
+        async function executeCrossAndAssign() {
+            const filePath = document.getElementById('file-select').value;
+            if (!filePath) {
+                alert("Selecciona un archivo para cruzar.");
+                return;
+            }
+
+            const activeOps = [];
+            document.querySelectorAll('.op-checkbox:checked').forEach(cb => activeOps.push(cb.value));
+
+            if (activeOps.length === 0) {
+                alert("Debes seleccionar al menos un operador activo.");
+                return;
+            }
+
+            const criteria = document.querySelector('input[name="criteria"]:checked').value;
+
+            if (!confirm(`¿Confirmas cruzar este archivo y asignar los casos entre ${activeOps.length} operadores activos bajo el criterio "${criteria}"?`)) return;
+
+            const btn = document.getElementById('btn-cross-assign');
+            btn.disabled = true;
+            btn.innerText = "Cruzando datos y asignando casos...";
+
+            try {
+                const res = await fetch('/api/supervisor/cross_and_assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_path: filePath,
+                        active_operator_ids: activeOps,
+                        criteria: criteria
+                    })
+                });
+                const data = await res.json();
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> CRUZAR ARCHIVO Y ASIGNAR CASOS A OPERADORES ACTIVOS`;
+
+                const resBox = document.getElementById('assign-result-box');
+                if (data.success) {
+                    resBox.className = "mt-4 p-4 rounded-xl border bg-emerald-950/40 border-emerald-500/60 text-emerald-200 text-xs";
+                    resBox.innerHTML = `
+                        <h4 class="font-bold text-sm text-emerald-400 mb-1">¡Cruce y Asignación Completada con Éxito!</h4>
+                        <p>• <strong>${data.total_asignados}</strong> casos distribuidos entre <strong>${data.operadores_activos}</strong> operadores activos.</p>
+                        <p>• Casos Nuevos detectados: <strong>${data.nuevos_detectados}</strong></p>
+                        <p>• Casos No Atendidos previos para reintento: <strong>${data.reintentos_no_atendidos}</strong></p>
+                        <p>• Criterio aplicado: <strong>${data.criterio}</strong></p>
+                    `;
+                    resBox.classList.remove('hidden');
+                    loadDashboardData();
+            updateConsecutivosBadge();
+                } else {
+                    resBox.className = "mt-4 p-4 rounded-xl border bg-rose-950/40 border-rose-500/60 text-rose-200 text-xs";
+                    resBox.innerHTML = `<strong>Error:</strong> ${data.error || 'Desconocido'}`;
+                    resBox.classList.remove('hidden');
+                }
+            } catch (e) {
+                btn.disabled = false;
+                alert("Error ejecutando cruce: " + e);
+            }
+        }
+
+        // Exportar Casos para Recategorizar
+        async function exportRecategorizacionExcel() {
+            try {
+                const res = await fetch('/api/export_recategorizacion');
+                const data = await res.json();
+                if (data.success) {
+                    alert(`¡Informe de Recategorización generado con éxito!\nTotal casos: ${data.total_casos}\nArchivo guardado en:\n${data.file}`);
+                } else {
+                    alert("Error generando informe.");
+                }
+            } catch (e) {
+                alert("Error: " + e);
+            }
+        }
+
+        async function exportLiveExcel() {
+            const res = await fetch('/api/export_excel', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                alert("¡Consolidado General generado con éxito en:\n" + data.file);
+            }
+        }
+
+        function populateReassignSelects() {
+            const sFrom = document.getElementById('reassign-from');
+            const sTo = document.getElementById('reassign-to');
+            sFrom.innerHTML = '';
+            sTo.innerHTML = '';
+
+            operatorsData.forEach(op => {
+                const opt1 = document.createElement('option');
+                opt1.value = op.id;
+                opt1.innerText = `${op.id}. ${op.nombre} (${op.tot_casos - op.auditados} pendientes)`;
+                sFrom.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = op.id;
+                opt2.innerText = `${op.id}. ${op.nombre}`;
+                sTo.appendChild(opt2);
+            });
+        }
+
+        async function loadInconsistencias() {
+            try {
+                const res = await fetch('/api/supervisor/inconsistencias');
+                const data = await res.json();
+                const cont = document.getElementById('inconsistencias-container');
+                cont.innerHTML = '';
+
+                if (data.length === 0) {
+                    cont.innerHTML = '<div class="p-8 text-center text-xs text-emerald-400 bg-emerald-950/20 border border-emerald-500/30 rounded-xl">✅ ¡Excelente! No hay incongruencias ni reclamos pendientes de recategorizar.</div>';
+                    return;
+                }
+
+                data.forEach(c => {
+                    const card = document.createElement('div');
+                    card.className = "bg-slate-800/80 border border-purple-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-start justify-between gap-4";
+                    card.innerHTML = `
+                        <div class="flex-grow">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-mono font-bold text-white text-xs">${c.codigo_caso}</span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600/30 text-blue-300">${c.categoria_homologada}</span>
+                                <span class="text-xs text-slate-400">Operador: <strong class="text-white">${c.operador_nombre}</strong></span>
+                            </div>
+                            <p class="text-xs text-slate-300 font-semibold mb-1">Estatus marcado: <span class="text-amber-400 font-bold">${c.estatus_llamada}</span> | Persiste: ${c.persiste} | Campo: ${c.requiere_campo}</p>
+                            <p class="text-xs text-slate-300 bg-slate-900 p-2 rounded-lg italic border border-slate-700/60">"${c.observaciones || 'Sin observación'}"</p>
+                            <p class="text-xs text-rose-300 font-medium mt-2">⚠️ Motivo: <strong>${c.inconsistencia_motivo || 'Marcado para Recategorización'}</strong></p>
+                        </div>
+                        <div class="flex sm:flex-col gap-2 shrink-0">
+                            <button onclick="devolverCaso(${c.id})" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow">
+                                ↩️ Devolver al Operario
+                            </button>
+                            <button onclick="aprobarCaso(${c.id})" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow">
+                                ✔️ Aprobar Caso
+                            </button>
+                        </div>
+                    `;
+                    cont.appendChild(card);
+                });
+            } catch (e) {
+                console.error("Error cargando inconsistencias:", e);
+            }
+        }
+
+        async function devolverCaso(casoId) {
+            const motivo = prompt("Indica el motivo por el cual devuelves este caso al operador:", "Verificar si la avería es de TX o de Poste");
+            if (!motivo) return;
+
+            const res = await fetch('/api/supervisor/devolver', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caso_id: casoId, motivo: motivo })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert("Caso devuelto al operador para corrección.");
+                loadInconsistencias();
+                loadDashboardData();
+            updateConsecutivosBadge();
+            }
+        }
+
+        async function aprobarCaso(casoId) {
+            const res = await fetch('/api/supervisor/aprobar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caso_id: casoId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                loadInconsistencias();
+                loadDashboardData();
+            updateConsecutivosBadge();
+            }
+        }
+
+        async function executeReassignment() {
+            const fromOp = document.getElementById('reassign-from').value;
+            const toOp = document.getElementById('reassign-to').value;
+            const count = document.getElementById('reassign-count').value;
+
+            if (fromOp === toOp) {
+                alert("El operador origen y destino no pueden ser el mismo.");
+                return;
+            }
+
+            if (!confirm(`¿Confirmas transferir ${count} clientes del Operador ${fromOp} al Operador ${toOp}?`)) return;
+
+            const res = await fetch('/api/supervisor/reasignar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    from_operador_id: fromOp,
+                    to_operador_id: toOp,
+                    cantidad_clientes: count
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`¡Éxito! Se reasignaron ${data.reassigned_clients} clientes.`);
+                loadDashboardData();
+            updateConsecutivosBadge();
+            }
+        }
+
+        async function executeSearch() {
+            const term = document.getElementById('search-input').value.trim();
+            if (!term) return;
+
+            const res = await fetch(`/api/search_case?q=${encodeURIComponent(term)}`);
+            const rows = await res.json();
+
+            const tbody = document.getElementById('search-table-body');
+            tbody.innerHTML = '';
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-xs text-slate-500">No se encontraron casos con ese criterio.</td></tr>';
+                return;
+            }
+
+            rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition";
+                tr.innerHTML = `
+                    <td class="p-2.5 font-mono font-bold text-blue-400">${r.codigo_caso}</td>
+                    <td class="p-2.5 font-bold text-white">${r.operador_nombre}</td>
+                    <td class="p-2.5">${r.denunciante}</td>
+                    <td class="p-2.5">${r.cedula}</td>
+                    <td class="p-2.5 font-mono text-emerald-400">${r.telefono_1}</td>
+                    <td class="p-2.5">${r.parroquia}</td>
+                    <td class="p-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] bg-blue-600/20 text-blue-300">${r.categoria_homologada}</span></td>
+                    <td class="p-2.5 font-bold ${r.estatus_llamada === 'ATENDIDO' ? 'text-emerald-400' : 'text-slate-400'}">${r.estatus_llamada || 'Pendiente'}</td>
+                    <td class="p-2.5 italic text-slate-400 max-w-xs truncate">${r.observaciones || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // GESTIÓN Y EDICIÓN DE OPERADORES
+        function openEditOperatorModal(id, nombre, activo) {
+            document.getElementById('edit-op-id').value = id;
+            document.getElementById('edit-op-nombre').value = nombre;
+            document.getElementById('edit-op-activo').checked = (activo === 1 || activo === true);
+            document.getElementById('modal-op-badge').innerText = `OP #${id}`;
+            document.getElementById('modal-edit-operator').classList.remove('hidden');
+            document.getElementById('edit-op-nombre').focus();
+        }
+
+        function closeEditOperatorModal() {
+            document.getElementById('modal-edit-operator').classList.add('hidden');
+        }
+
+        async function saveOperatorEdit(e) {
+            e.preventDefault();
+            const id = document.getElementById('edit-op-id').value;
+            const nombre = document.getElementById('edit-op-nombre').value.trim();
+            const activo = document.getElementById('edit-op-activo').checked;
+
+            if (!nombre) {
+                alert("Por favor ingresa un nombre para el operador.");
+                return;
+            }
+
+            const btn = document.getElementById('btn-save-operator');
+            btn.disabled = true;
+            btn.innerText = "Guardando...";
+
+            try {
+                const res = await fetch('/api/supervisor/update_operator', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        operador_id: id,
+                        nombre: nombre,
+                        activo: activo
+                    })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    closeEditOperatorModal();
+                    // Refrescar tabla del supervisor y checkboxes de asignación
+                    loadDashboardData();
+            updateConsecutivosBadge();
+                    if (typeof loadActiveOperatorsCheckboxes === 'function') {
+                        loadActiveOperatorsCheckboxes();
+                    }
+                } else {
+                    alert("Error al actualizar: " + (result.error || "Ocurrió un error"));
+                }
+            } catch (err) {
+                console.error("Error guardando operador:", err);
+                alert("Error de conexión al guardar operador.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "💾 Guardar Cambios";
+            }
+        }
+
+        // LIMPIEZA TOTAL DE PRUEBAS PARA INICIAR EL LUNES
+        async function confirmResetTestData() {
+            const ok = confirm("¿Deseas limpiar todas las llamadas de prueba guardadas durante el fin de semana?\n\nEsto dejará los 3,584 casos asignados a los 15 operadores completamente en PENDIENTE (en cero) y listos para la jornada oficial del lunes.");
+            if (!ok) return;
+
+            try {
+                const res = await fetch('/api/supervisor/reset_test_data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: true })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    alert("✅ Sistema restablecido con éxito. Todas las pruebas han sido eliminadas y el sistema está 100% en cero para el lunes.");
+                    loadDashboardData();
+            updateConsecutivosBadge();
+                } else {
+                    alert("Error: " + (result.error || "No se pudo restablecer"));
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Error de conexión al restablecer datos de prueba.");
+            }
+        }
+
+        // GESTIÓN DE CASOS DESESTIMADOS
+        let desestimadosData = [];
+
+        async function loadDesestimados() {
+            try {
+                const tbody = document.getElementById('desestimados-table-body');
+                tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-xs text-slate-500">Cargando casos desestimados...</td></tr>';
+
+                const res = await fetch('/api/supervisor/desestimados');
+                desestimadosData = await res.json();
+
+                document.getElementById('desestimar-total-count').innerText = desestimadosData.length;
+                
+                const uniqueOps = new Set(desestimadosData.map(d => d.operador_nombre).filter(Boolean));
+                document.getElementById('desestimar-ops-count').innerText = uniqueOps.size;
+
+                const badge = document.getElementById('badge-desestimar-tab');
+                if (desestimadosData.length > 0) {
+                    badge.innerText = desestimadosData.length;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+
+                renderDesestimadosTable(desestimadosData);
+            } catch (e) {
+                console.error("Error cargando desestimados:", e);
+            }
+        }
+
+        function renderDesestimadosTable(items) {
+            const tbody = document.getElementById('desestimados-table-body');
+            tbody.innerHTML = '';
+
+            if (items.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="p-8 text-center text-xs text-slate-400 font-medium">
+                            No hay casos desestimados registrados hasta el momento.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            items.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition";
+                tr.innerHTML = `
+                    <td class="p-3 font-mono font-bold text-rose-400 whitespace-nowrap">${r.codigo_caso}</td>
+                    <td class="p-3 font-bold text-white whitespace-nowrap">${r.operador_nombre || 'Sin Asignar'}</td>
+                    <td class="p-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">${r.fecha_contacto || r.actualizado_en ? (r.fecha_contacto || r.actualizado_en).slice(0, 10) : 'N/D'}</td>
+                    <td class="p-3">
+                        <span class="block font-bold text-slate-200">${r.denunciante || 'Sin Nombre'}</span>
+                        <span class="text-[10px] text-slate-400 font-mono">${r.cedula || 'S/C'}</span>
+                    </td>
+                    <td class="p-3 font-mono text-[11px] text-emerald-400 whitespace-nowrap">${r.telefono_1 || '-'}</td>
+                    <td class="p-3">
+                        <span class="block text-slate-200">${r.parroquia || '-'}</span>
+                        <span class="text-[10px] text-slate-400">${r.municipio || '-'}</span>
+                    </td>
+                    <td class="p-3">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600/20 text-blue-300 border border-blue-500/30 whitespace-nowrap">
+                            ${r.categoria_homologada || 'GENERAL'}
+                        </span>
+                    </td>
+                    <td class="p-3 italic text-amber-200/90 max-w-xs text-[11px]">
+                        "${r.observaciones || 'Desestimado por el operador sin motivo registrado'}"
+                    </td>
+                    <td class="p-3 text-center whitespace-nowrap">
+                        <div class="flex items-center justify-center gap-1.5">
+                            <button onclick="devolverDesestimado(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-sm flex items-center gap-1" title="Devolver al operador con motivo para corregir">
+                                ↩️ Devolver
+                            </button>
+                            <button onclick="aprobarDesestimado(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm flex items-center gap-1" title="Aprobar formalmente la desestimación">
+                                ✔️ Aprobar
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterDesestimadosTable() {
+            const q = (document.getElementById('desestimar-filter-input').value || '').toLowerCase().trim();
+            if (!q) {
+                renderDesestimadosTable(desestimadosData);
+                return;
+            }
+            const filtered = desestimadosData.filter(d => 
+                (d.codigo_caso && d.codigo_caso.toLowerCase().includes(q)) ||
+                (d.operador_nombre && d.operador_nombre.toLowerCase().includes(q)) ||
+                (d.denunciante && d.denunciante.toLowerCase().includes(q)) ||
+                (d.cedula && d.cedula.toLowerCase().includes(q)) ||
+                (d.parroquia && d.parroquia.toLowerCase().includes(q)) ||
+                (d.observaciones && d.observaciones.toLowerCase().includes(q))
+            );
+            renderDesestimadosTable(filtered);
+        }
+
+        async function reabrirCaso(casoId, codigo) {
+            const motivo = prompt(
+                `¿Deseas regresar el caso ${codigo} al operador?\n\nIndica el motivo o instrucción para que el operador sepa por qué se le devolvió:`,
+                "Caso desestimado devuelto por Supervisor: Verificar y contactar nuevamente al denunciante"
+            );
+            if (!motivo) return;
+
+            try {
+                const res = await fetch('/api/supervisor/reabrir_caso', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ caso_id: casoId, motivo: motivo })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`✅ Caso ${codigo} devuelto al operador con éxito.\n\nEl operador verá la alerta en su módulo identificando que el caso fue regresado.`);
+                    loadDesestimados();
+                    loadDashboardData();
+            updateConsecutivosBadge();
+                } else {
+                    alert("Error al regresar caso: " + (data.error || 'Desconocido'));
+                }
+            } catch (e) {
+                alert("Error de conexión: " + e);
+            }
+        }
+
+        async function exportDesestimadosExcel() {
+            try {
+                const res = await fetch('/api/export_desestimados');
+                const data = await res.json();
+                if (data.success) {
+                    alert(`¡Informe de Casos Desestimados generado con éxito!\nTotal casos: ${data.total_casos}\nArchivo guardado en:\n${data.file}`);
+                } else {
+                    alert("Error generando informe de casos desestimados.");
+                }
+            } catch (e) {
+                alert("Error: " + e);
+            }
+        }
+
+        loadDashboardData();
+            updateConsecutivosBadge();
+        setInterval(loadDashboardData, 6000);
+    </script>
+
+    <!-- MODAL DE EDICIÓN DE OPERADOR -->
+    <div id="modal-edit-operator" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                <h3 class="text-base font-black text-white flex items-center gap-2">
+                    <span>✏️ Modificar Datos del Operador</span>
+                    <span id="modal-op-badge" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-600/30 text-blue-300 border border-blue-500/40">OP#1</span>
+                </h3>
+                <button type="button" onclick="closeEditOperatorModal()" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+            </div>
+
+            <form id="form-edit-operator" onsubmit="saveOperatorEdit(event)" class="space-y-4">
+                <input type="hidden" id="edit-op-id">
+                
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-1.5">Nombre y Apellido del Operador:</label>
+                    <input type="text" id="edit-op-nombre" required class="w-full bg-slate-800 text-white font-bold text-sm border border-slate-700 rounded-xl p-3 focus:outline-none focus:border-blue-500">
+                    <span class="text-[11px] text-slate-400 mt-1 block">Este nombre se actualizará automáticamente en la pantalla del operario, en el monitor video wall y en las asignaciones.</span>
+                </div>
+
+                <div class="flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                    <input type="checkbox" id="edit-op-activo" class="w-4 h-4 text-blue-600 rounded bg-slate-900 border-slate-700">
+                    <label for="edit-op-activo" class="text-xs font-bold text-slate-200 cursor-pointer">
+                        Operador Activo en el Sistema
+                        <span class="block text-[10px] text-slate-400 font-normal">Si se desmarca, se excluye de las asignaciones automáticas de casos.</span>
+                    </label>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                    <button type="button" onclick="closeEditOperatorModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="btn-save-operator" class="px-5 py-2 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition">
+                        💾 Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

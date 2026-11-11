@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SALA SITUACIONAL - MONITOREO EN VIVO</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #070d1e;
+            color: #f8fafc;
+        }
+        .pulse-dot {
+            animation: pulse-animation 2s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        .glass-card {
+            background: rgba(18, 28, 51, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .scrollbar-hidden::-webkit-scrollbar { display: none; }
+
+        /* ONDAS Y FLUIDO DINÁMICO DEL TRANSFORMADOR (TX) */
+        @keyframes waveMoveHorizontal {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-120px); }
+        }
+        @keyframes waveMoveHorizontalRev {
+            0% { transform: translateX(-120px); }
+            100% { transform: translateX(0); }
+        }
+        .wave-anim-1 {
+            animation: waveMoveHorizontal 3.8s linear infinite;
+        }
+        .wave-anim-2 {
+            animation: waveMoveHorizontalRev 5s linear infinite;
+        }
+
+        /* BURBUJAS DE FLUIDO DIELÉCTRICO */
+        @keyframes bubbleFloat {
+            0% { transform: translateY(0px) scale(0.6); opacity: 0; }
+            30% { opacity: 0.9; }
+            80% { opacity: 0.8; }
+            100% { transform: translateY(-110px) scale(1.2); opacity: 0; }
+        }
+        .bubble-p1 { animation: bubbleFloat 3.2s ease-in infinite; }
+        .bubble-p2 { animation: bubbleFloat 4.1s ease-in 1s infinite; }
+        .bubble-p3 { animation: bubbleFloat 4.8s ease-in 2s infinite; }
+        .bubble-p4 { animation: bubbleFloat 3.6s ease-in 0.5s infinite; }
+
+        /* CHISPA ELÉCTRICA EN AISLADORES */
+        @keyframes sparkDischarge {
+            0% { opacity: 0; filter: drop-shadow(0 0 0px #38bdf8); }
+            10% { opacity: 1; filter: drop-shadow(0 0 14px #38bdf8) drop-shadow(0 0 24px #67e8f9); }
+            25% { opacity: 0.2; }
+            45% { opacity: 1; filter: drop-shadow(0 0 16px #38bdf8); }
+            70% { opacity: 0.3; }
+            85% { opacity: 0.95; }
+            100% { opacity: 0; }
+        }
+        .spark-flash {
+            animation: sparkDischarge 1s ease-out forwards;
+        }
+
+        /* PULSO DE CONTENEDOR TX */
+        @keyframes txSurgePulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
+            40% { box-shadow: 0 0 25px 6px rgba(56, 189, 248, 0.5); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .tx-surge-active {
+            animation: txSurgePulse 1.2s ease-out;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col justify-between p-1.5 sm:p-2 lg:p-2.5 overflow-hidden select-none">
+
+    <!-- CABECERA DE LA SALA SITUACIONAL -->
+    <header class="flex items-center justify-between pb-1.5 border-b border-slate-700/60 mb-1.5 shrink-0">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg lg:text-xl font-black tracking-tight text-white leading-none">SALA SITUACIONAL CORPOELEC</h1>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span> EN VIVO
+                    </span>
+                </div>
+                <p class="text-[10px] sm:text-[11px] text-slate-400 font-medium">Monitoreo de Operaciones 1x10 del Buen Gobierno | Estado Zulia</p>
+            </div>
+        </div>
+
+        <!-- RELOJ Y ACCESOS RÁPIDOS -->
+        <div class="flex items-center gap-4">
+            <div class="text-right">
+                <div id="clock" class="text-lg lg:text-xl font-black text-blue-400 font-mono tracking-wider leading-none">--:--:--</div>
+                <div id="date-display" class="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Sábado, 7 de Noviembre</div>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <button onclick="window.location.href='/api/export_consecutivos_linea?tipo=pendientes'" class="px-2.5 py-1 rounded-lg text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 transition flex items-center gap-1 shadow" title="Descargar casos marcados como Consecutivo en Línea">
+                    ⚡ Consecutivos Campo <span id="monitor-badge-consecutivos" class="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-900 text-amber-300 font-black">0</span>
+                </button>
+                <a href="/operador" target="_blank" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">📱 Operario</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- BLOQUE DE INDICADORES PRINCIPALES (TARJETAS KPI COMPACTAS) -->
+    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-1.5 shrink-0">
+        <!-- Total Casos -->
+        <div class="glass-card rounded-xl py-1.5 px-2.5 flex flex-col justify-between border-l-4 border-l-blue-500">
+            <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Total Solicitudes</span>
+            <div class="my-0.5">
+                <span id="kpi-total" class="text-xl lg:text-2xl font-black text-white font-mono leading-none">3,584</span>
+            </div>
+            <span id="kpi-clientes" class="text-[9px] text-slate-400 font-medium truncate">1,465 Denunciantes</span>
+        </div>
+
+        <!-- Casos Auditados / Avance -->
+        <div class="glass-card rounded-xl py-1.5 px-2.5 flex flex-col justify-between border-l-4 border-l-cyan-400">
+            <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Llamadas / Avance</span>
+            <div class="my-0.5 flex items-baseline gap-1.5">
+                <span id="kpi-auditados" class="text-xl lg:text-2xl font-black text-cyan-400 font-mono leading-none">0</span>
+                <span id="kpi-pct-avance" class="text-xs font-bold text-cyan-200 font-mono">0%</span>
+            </div>
+            <span id="kpi-pendientes" class="text-[9px] text-slate-400 font-medium truncate">Pendientes: 3,584</span>
+        </div>
+
+        <!-- Solventados / Atendidos -->
+        <div class="glass-card rounded-xl py-1.5 px-2.5 flex flex-col justify-between border-l-4 border-l-emerald-500">
+            <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Solventados / Atendidos</span>
+            <div class="my-0.5 flex items-baseline gap-1.5">
+                <span id="kpi-atendidos" class="text-xl lg:text-2xl font-black text-emerald-400 font-mono leading-none">0</span>
+                <span id="kpi-efectividad" class="text-xs font-bold text-emerald-200 font-mono">0%</span>
+            </div>
+            <span class="text-[9px] text-emerald-400/90 font-medium truncate">Efectividad de cierre</span>
+        </div>
+
+        <!-- Sin Comunicación -->
+        <div class="glass-card rounded-xl py-1.5 px-2.5 flex flex-col justify-between border-l-4 border-l-amber-500">
+            <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Sin Comunicación</span>
+            <div class="my-0.5">
+                <span id="kpi-sin-com" class="text-xl lg:text-2xl font-black text-amber-400 font-mono leading-none">0</span>
+            </div>
+            <span class="text-[9px] text-amber-300/90 font-medium truncate">Para Reintento</span>
+        </div>
+
+        <!-- Requieren Campo / Cuadrilla -->
+        <div class="glass-card rounded-xl py-1.5 px-2.5 flex flex-col justify-between border-l-4 border-l-rose-500">
+            <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Requieren Campo</span>
+            <div class="my-0.5">
+                <span id="kpi-campo" class="text-xl lg:text-2xl font-black text-rose-400 font-mono leading-none">0</span>
+            </div>
+            <span class="text-[9px] text-rose-300/90 font-medium truncate">Demanda técnica</span>
+        </div>
+
+        <!-- Alertas de Calidad -->
+        <div class="glass-card rounded-xl py-1.5 px-2.5 flex flex-col justify-between border-l-4 border-l-purple-500">
+            <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Alertas de Calidad</span>
+            <div class="my-0.5">
+                <span id="kpi-inconsistencias" class="text-xl lg:text-2xl font-black text-purple-400 font-mono leading-none">0</span>
+            </div>
+            <span id="kpi-devueltos" class="text-[9px] text-purple-300/90 font-medium truncate">Devueltos: 0</span>
+        </div>
+    </section>
+
+    <!-- CUERPO PRINCIPAL: TABLERO DE LOS 15 OPERADORES Y PANEL TX -->
+    <main class="grid grid-cols-1 lg:grid-cols-4 gap-2 flex-grow min-h-0 overflow-hidden mb-1.5">
+        
+        <!-- COLUMNA IZQUIERDA Y CENTRAL: GRILLA DE LOS 15 OPERADORES (3 Columnas de ancho) -->
+        <div class="lg:col-span-3 glass-card rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between overflow-hidden h-full">
+            <div class="flex items-center justify-between pb-1.5 border-b border-slate-700/60 shrink-0">
+                <h2 class="text-xs sm:text-sm font-extrabold text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>MONITOREO DE LOS 15 OPERARIOS EN TIEMPO REAL</span>
+                </h2>
+                <div class="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-3">
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Activo</span>
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-600"></span> Pausa</span>
+                </div>
+            </div>
+
+            <!-- Grilla interactiva de los 15 operadores (3 filas x 5 columnas sin huecos vacíos) -->
+            <div id="operators-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 grid-rows-3 gap-2 flex-grow min-h-0 h-full overflow-hidden">
+                <!-- Se llena dinámicamente con JavaScript -->
+            </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: TRANSFORMADOR (TX) DINÁMICO Y PARROQUIAS CRÍTICAS -->
+        <div class="flex flex-col gap-2 overflow-hidden h-full">
+
+            <!-- TRANSFORMADOR (TX) HOLOGRÁFICO CON LÍQUIDO DIELÉCTRICO DINÁMICO -->
+            <div id="tx-monitor-card" class="glass-card rounded-2xl p-2 flex flex-col justify-between border-t-2 border-t-blue-500 shadow-xl relative overflow-hidden shrink-0">
+                
+                <!-- Encabezado del Módulo TX -->
+                <div class="flex items-center justify-between pb-1.5 mb-1 border-b border-slate-700/60">
+                    <div class="flex items-center gap-1.5">
+                        <span class="p-1 rounded bg-amber-500/20 text-amber-400">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        </span>
+                        <div>
+                            <h3 class="text-xs font-black text-white uppercase tracking-wider leading-none">CARGA OPERATIVA TX</h3>
+                            <span class="text-[9px] text-slate-400 font-medium">Nivel Dieléctrico en Vivo</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button onclick="toggleDemoMode()" id="btn-demo-mode" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition" title="Probar simulación de llenado de líquido">
+                            🧪 Demo
+                        </button>
+                        <div id="tx-spark-badge" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> SCADA
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTENEDOR DEL GRÁFICO SVG DEL TRANSFORMADOR (ILUMINADO Y NÍTIDO) -->
+                <div class="relative w-full flex items-center justify-center my-0.5">
+                    <svg viewBox="0 0 320 220" class="w-full max-w-[235px] h-auto drop-shadow-2xl select-none">
+                        <defs>
+                            <!-- Degradado Metálico Carcasa -->
+                            <linearGradient id="txMetal" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#243048" />
+                                <stop offset="50%" stop-color="#121b2d" />
+                                <stop offset="100%" stop-color="#1e293b" />
+                            </linearGradient>
+
+                            <!-- Degradado Aisladores Cerámicos (Terracota Vibrante) -->
+                            <linearGradient id="txBushing" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#9a3412" />
+                                <stop offset="50%" stop-color="#ea580c" />
+                                <stop offset="100%" stop-color="#7c2d12" />
+                            </linearGradient>
+
+                            <!-- Degradado Fluido Verde Neón (Atendidos / Solventados) -->
+                            <linearGradient id="txGreenLiquid" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#34d399" stop-opacity="0.95" />
+                                <stop offset="50%" stop-color="#10b981" stop-opacity="0.92" />
+                                <stop offset="100%" stop-color="#047857" stop-opacity="0.98" />
+                            </linearGradient>
+
+                            <!-- Degradado Fluido Amarillo Neón (Sin Comunicación / Reintentos) -->
+                            <linearGradient id="txAmberLiquid" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#fde047" stop-opacity="0.95" />
+                                <stop offset="50%" stop-color="#f59e0b" stop-opacity="0.92" />
+                                <stop offset="100%" stop-color="#b45309" stop-opacity="0.98" />
+                            </linearGradient>
+
+                            <!-- Fluido Base en Espera (Standby) -->
+                            <linearGradient id="txStandbyLiquid" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.25" />
+                                <stop offset="100%" stop-color="#0284c7" stop-opacity="0.15" />
+                            </linearGradient>
+
+                            <!-- Brillo especular del cristal -->
+                            <linearGradient id="txGlassShine" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.30" />
+                                <stop offset="35%" stop-color="#ffffff" stop-opacity="0.05" />
+                                <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
+                            </linearGradient>
+
+                            <!-- Recorte de la ventana de cristal -->
+                            <clipPath id="txTankViewport">
+                                <rect x="56" y="66" width="208" height="124" rx="8" />
+                            </clipPath>
+                        </defs>
+
+                        <!-- AISLADORES DE ALTA TENSIÓN (BUSHINGS SUPERIORES) -->
+                        <!-- Aislador 1 (Izquierdo) -->
+                        <g transform="translate(85, 8)">
+                            <ellipse cx="15" cy="38" rx="13" ry="3.5" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="30" rx="11" ry="3" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="22" rx="9" ry="2.5" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="14" rx="7" ry="2" fill="url(#txBushing)" />
+                            <rect x="13.5" y="2" width="3" height="12" fill="#e2e8f0" />
+                            <circle cx="15" cy="2" r="3" fill="#f59e0b" />
+                        </g>
+
+                        <!-- Aislador 2 (Centro) -->
+                        <g transform="translate(145, 3)">
+                            <ellipse cx="15" cy="42" rx="14" ry="4" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="33" rx="12" ry="3.5" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="24" rx="10" ry="3" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="15" rx="8" ry="2.5" fill="url(#txBushing)" />
+                            <rect x="13.5" y="2" width="3" height="13" fill="#e2e8f0" />
+                            <circle cx="15" cy="2" r="3" fill="#f59e0b" />
+                        </g>
+
+                        <!-- Aislador 3 (Derecho) -->
+                        <g transform="translate(205, 8)">
+                            <ellipse cx="15" cy="38" rx="13" ry="3.5" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="30" rx="11" ry="3" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="22" rx="9" ry="2.5" fill="url(#txBushing)" />
+                            <ellipse cx="15" cy="14" rx="7" ry="2" fill="url(#txBushing)" />
+                            <rect x="13.5" y="2" width="3" height="12" fill="#e2e8f0" />
+                            <circle cx="15" cy="2" r="3" fill="#f59e0b" />
+                        </g>
+
+                        <!-- TANQUE CONSERVADOR DE EXPANSIÓN (SUPERIOR IZQUIERDO) -->
+                        <rect x="25" y="18" width="42" height="20" rx="5" fill="#1e293b" stroke="#64748b" stroke-width="1.2" />
+                        <path d="M 46 38 L 46 48" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" />
+
+                        <!-- VÁLVULA DE ALIVIO DE SOBREPRESIÓN (SUPERIOR DERECHO) -->
+                        <rect x="252" y="24" width="14" height="10" rx="2" fill="#334155" stroke="#64748b" stroke-width="1" />
+                        <circle cx="259" cy="20" r="3.5" fill="#e2e8f0" />
+
+                        <!-- TAPA SUPERIOR EMBRIDADA -->
+                        <rect x="42" y="48" width="236" height="12" rx="3" fill="#334155" stroke="#64748b" stroke-width="1.2" />
+                        <circle cx="58" cy="45" r="4" fill="none" stroke="#94a3b8" stroke-width="1.5" />
+                        <circle cx="262" cy="45" r="4" fill="none" stroke="#94a3b8" stroke-width="1.5" />
+
+                        <!-- ALETAS RADIADORAS IZQUIERDA -->
+                        <g opacity="0.9">
+                            <rect x="16" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                            <rect x="25" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                            <rect x="34" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                            <rect x="43" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                        </g>
+
+                        <!-- ALETAS RADIADORAS DERECHA -->
+                        <g opacity="0.9">
+                            <rect x="272" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                            <rect x="281" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                            <rect x="290" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                            <rect x="299" y="66" width="5" height="120" rx="2" fill="#1e293b" stroke="#475569" />
+                        </g>
+
+                        <!-- CUERPO PRINCIPAL METÁLICO -->
+                        <rect x="48" y="58" width="224" height="140" rx="10" fill="url(#txMetal)" stroke="#3b82f6" stroke-opacity="0.5" stroke-width="1.8" />
+
+                        <!-- VENTANA DE CRISTAL / VISOR DE NIVEL INTERNO -->
+                        <g clip-path="url(#txTankViewport)">
+                            <!-- Fondo oscuro del tanque con iluminación técnica -->
+                            <rect x="56" y="66" width="208" height="124" fill="#061024" />
+
+                            <!-- Cuadrícula técnica sutil -->
+                            <line x1="56" y1="97" x2="264" y2="97" stroke="#1e293b" stroke-dasharray="3 3" opacity="0.6" />
+                            <line x1="56" y1="128" x2="264" y2="128" stroke="#1e293b" stroke-dasharray="3 3" opacity="0.6" />
+                            <line x1="56" y1="159" x2="264" y2="159" stroke="#1e293b" stroke-dasharray="3 3" opacity="0.6" />
+
+                            <!-- FLUIDO BASE EN ESPERA (STANDBY) - Da vida al tanque mientras no hay llamadas -->
+                            <g id="tx-standby-layer">
+                                <rect x="56" y="174" width="208" height="16" fill="url(#txStandbyLiquid)" />
+                                <path class="wave-anim-1" fill="url(#txStandbyLiquid)" opacity="0.8" d="M -120 0 Q -90 4 -60 0 T 0 0 T 60 0 T 120 0 T 180 0 T 240 0 T 300 0 T 360 0 V 10 H -120 Z" transform="translate(-60, 172)" />
+                            </g>
+
+                            <!-- CAPA 1: FLUIDO AMARILLO (SIN COMUNICACIÓN / REINTENTOS) -->
+                            <g id="tx-amber-layer">
+                                <rect id="tx-amber-rect" x="56" y="190" width="208" height="0" fill="url(#txAmberLiquid)" />
+                                <path id="tx-amber-wave" class="wave-anim-2" fill="url(#txAmberLiquid)" d="M -120 0 Q -90 5 -60 0 T 0 0 T 60 0 T 120 0 T 180 0 T 240 0 T 300 0 T 360 0 V 15 H -120 Z" style="display:none;" />
+                            </g>
+
+                            <!-- CAPA 2: FLUIDO VERDE (ATENDIDOS / SOLVENTADOS) -->
+                            <g id="tx-green-layer">
+                                <rect id="tx-green-rect" x="56" y="190" width="208" height="0" fill="url(#txGreenLiquid)" />
+                                <path id="tx-green-wave" class="wave-anim-1" fill="url(#txGreenLiquid)" d="M -120 0 Q -90 5 -60 0 T 0 0 T 60 0 T 120 0 T 180 0 T 240 0 T 300 0 T 360 0 V 15 H -120 Z" style="display:none;" />
+                            </g>
+
+                            <!-- BURBUJAS DE FLUIDO DIELÉCTRICO -->
+                            <circle cx="85" cy="185" r="2" fill="#ffffff" opacity="0.7" class="bubble-p1" />
+                            <circle cx="130" cy="187" r="2.5" fill="#ffffff" opacity="0.7" class="bubble-p2" />
+                            <circle cx="185" cy="186" r="1.8" fill="#ffffff" opacity="0.7" class="bubble-p3" />
+                            <circle cx="220" cy="188" r="2.2" fill="#ffffff" opacity="0.7" class="bubble-p4" />
+
+                            <!-- REGLETA DE MEDICIÓN DE CARGA (0% A 100%) -->
+                            <g opacity="0.85">
+                                <text x="256" y="78" fill="#cbd5e1" font-size="7.5" font-family="Inter" font-weight="900" text-anchor="end">100%</text>
+                                <line x1="258" y1="76" x2="264" y2="76" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <text x="256" y="107" fill="#cbd5e1" font-size="7.5" font-family="Inter" font-weight="900" text-anchor="end">75%</text>
+                                <line x1="258" y1="105" x2="264" y2="105" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <text x="256" y="136" fill="#cbd5e1" font-size="7.5" font-family="Inter" font-weight="900" text-anchor="end">50%</text>
+                                <line x1="258" y1="134" x2="264" y2="134" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <text x="256" y="165" fill="#cbd5e1" font-size="7.5" font-family="Inter" font-weight="900" text-anchor="end">25%</text>
+                                <line x1="258" y1="163" x2="264" y2="163" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <text x="256" y="188" fill="#cbd5e1" font-size="7.5" font-family="Inter" font-weight="900" text-anchor="end">0%</text>
+                                <line x1="258" y1="188" x2="264" y2="188" stroke="#94a3b8" stroke-width="1.5" />
+                            </g>
+
+                            <!-- REFLEJO DE VIDRIO ESPECULAR -->
+                            <polygon points="56,66 115,66 75,190 56,190" fill="url(#txGlassShine)" pointer-events="none" />
+                        </g>
+
+                        <!-- MARCO EXTERIOR DE LA VENTANA -->
+                        <rect x="56" y="66" width="208" height="124" rx="8" fill="none" stroke="#64748b" stroke-width="1.5" />
+
+                        <!-- CHISPAS / ARCO ELÉCTRICO EN CADA LLAMADA -->
+                        <path id="tx-spark-1" class="spark-line" d="M 100 12 Q 130 -2 160 8 Q 185 20 220 12" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" opacity="0" />
+                        <path id="tx-spark-2" class="spark-line" d="M 100 12 Q 120 22 160 8 Q 195 -1 220 12" fill="none" stroke="#67e8f9" stroke-width="1.8" stroke-linecap="round" opacity="0" />
+
+                        <!-- VIGAS DE BASE Y TIERRA -->
+                        <rect x="36" y="198" width="248" height="10" rx="2" fill="#1e293b" stroke="#475569" stroke-width="1.2" />
+                        <!-- Símbolo de Tierra -->
+                        <g transform="translate(268, 199)">
+                            <line x1="0" y1="3" x2="8" y2="3" stroke="#e2e8f0" stroke-width="1.2" />
+                            <line x1="2" y1="5.5" x2="6" y2="5.5" stroke="#e2e8f0" stroke-width="1.2" />
+                            <line x1="3" y1="8" x2="5" y2="8" stroke="#e2e8f0" stroke-width="1.2" />
+                        </g>
+
+                        <!-- PLACA DE CARACTERÍSTICAS -->
+                        <rect x="80" y="200" width="160" height="6" rx="1.5" fill="#090d16" />
+                        <text x="160" y="205" fill="#94a3b8" font-size="5" font-family="Inter" font-weight="900" text-anchor="middle" letter-spacing="1">CORPOELEC ZULIA • TX 1x10 BUEN GOBIERNO</text>
+                    </svg>
+                </div>
+
+                <!-- LECTURAS DIGITALES Y MEDICIÓN DE FLUIDO -->
+                <div class="mt-1 space-y-1 bg-slate-950/80 p-2 rounded-xl border border-slate-800 shrink-0">
+                    <!-- Fila 1: Verde (Atendidos) -->
+                    <div class="flex items-center justify-between text-[11px]">
+                        <span class="flex items-center gap-1.5 text-emerald-400 font-bold">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Líquido Verde (Atendidos):
+                        </span>
+                        <span id="tx-stat-green" class="font-black text-white font-mono">0 (0.0%)</span>
+                    </div>
+
+                    <!-- Fila 2: Amarillo (Sin Comunicación) -->
+                    <div class="flex items-center justify-between text-[11px]">
+                        <span class="flex items-center gap-1.5 text-amber-400 font-bold">
+                            <span class="w-2 h-2 rounded-full bg-amber-400"></span> Líquido Amarillo (Sin Com.):
+                        </span>
+                        <span id="tx-stat-amber" class="font-black text-white font-mono">0 (0.0%)</span>
+                    </div>
+
+                    <!-- Fila 3: Por Atender / Capacidad libre -->
+                    <div class="flex items-center justify-between text-[10px] pt-1 border-t border-slate-800/80 text-slate-400">
+                        <span class="flex items-center gap-1 font-medium">
+                            <span class="w-1.5 h-1.5 rounded-full bg-slate-600"></span> Capacidad Restante:
+                        </span>
+                        <span id="tx-stat-pending" class="font-bold text-slate-300 font-mono">3,584 Casos</span>
+                    </div>
+                </div>
+
+                <!-- SELECTOR DE VISTA DE ESCALA (TURNO VS TOTAL) -->
+                <div class="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 bg-slate-900/60 p-1 rounded-lg border border-slate-800/60 shrink-0">
+                    <span class="font-medium">Escala del Tanque:</span>
+                    <div class="flex items-center gap-1">
+                        <button id="btn-scale-shift" onclick="setTxScale('shift')" class="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-600 text-white transition">
+                            Turno Hoy
+                        </button>
+                        <button id="btn-scale-total" onclick="setTxScale('total')" class="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+                            Total General
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PARROQUIAS CON MÁS AVERÍAS (VISIBLE EN LA MISMA PANTALLA) -->
+            <div class="glass-card rounded-2xl p-2.5 flex-grow flex flex-col justify-between overflow-hidden">
+                <div class="flex items-center justify-between pb-1.5 border-b border-slate-700/60 shrink-0">
+                    <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        <span>Parroquias Críticas TX</span>
+                    </h3>
+                    <span class="text-[9px] text-blue-400 font-bold uppercase tracking-wider">Avance</span>
+                </div>
+                
+                <div id="parish-list" class="space-y-1.5 overflow-y-auto pr-0.5 scrollbar-hidden flex-grow my-1">
+                    <!-- Se llena dinámicamente con las barras de fluido por parroquia -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- TINTA INFERIOR: TICKER DE EVENTOS EN VIVO -->
+    <footer class="glass-card rounded-xl px-2.5 py-1 flex items-center gap-2 overflow-hidden border border-slate-700/60 shrink-0">
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-600 text-white shrink-0 uppercase tracking-wider">Actividad en Vivo</span>
+        <div class="overflow-hidden whitespace-nowrap w-full">
+            <div id="live-ticker" class="text-xs text-slate-300 font-medium inline-block">
+                Iniciando conexión con sala situacional...
+            </div>
+        </div>
+    </footer>
+
+    <!-- SCRIPT DE ACTUALIZACIÓN EN VIVO -->
+    <script>
+        let txScaleMode = 'shift'; // 'shift' (meta de 200) o 'total' (3584 casos)
+        let lastLoggedAuditCount = -1;
+        let isDemoMode = false;
+
+        // Reloj en vivo
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('es-VE');
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('date-display').innerText = now.toLocaleDateString('es-VE', options);
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function setTxScale(mode) {
+            txScaleMode = mode;
+            const btnShift = document.getElementById('btn-scale-shift');
+            const btnTotal = document.getElementById('btn-scale-total');
+            if (mode === 'shift') {
+                btnShift.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-blue-600 text-white transition";
+                btnTotal.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition";
+            } else {
+                btnShift.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition";
+                btnTotal.className = "px-2 py-0.5 rounded text-[9px] font-bold bg-blue-600 text-white transition";
+            }
+            loadGlobalStats();
+            loadOperators();
+            loadParishes();
+        }
+
+        function triggerTxSpark() {
+            const spark1 = document.getElementById('tx-spark-1');
+            const spark2 = document.getElementById('tx-spark-2');
+            const card = document.getElementById('tx-monitor-card');
+            const badge = document.getElementById('tx-spark-badge');
+
+            if (spark1 && spark2) {
+                spark1.classList.remove('spark-flash');
+                spark2.classList.remove('spark-flash');
+                void spark1.offsetWidth; // forzar reflow
+                spark1.classList.add('spark-flash');
+                spark2.classList.add('spark-flash');
+            }
+
+            if (card) {
+                card.classList.remove('tx-surge-active');
+                void card.offsetWidth;
+                card.classList.add('tx-surge-active');
+            }
+
+            if (badge) {
+                badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span> ⚡ LLAMADA REGISTRADA';
+                badge.className = "px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-900/90 text-cyan-200 border border-cyan-400 flex items-center gap-1";
+                setTimeout(() => {
+                    badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> SCADA';
+                    badge.className = "px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1";
+                }, 3000);
+            }
+        }
+
+        // Modo Demostración para previsualizar llenado de líquido
+        function toggleDemoMode() {
+            isDemoMode = !isDemoMode;
+            const btn = document.getElementById('btn-demo-mode');
+            if (isDemoMode) {
+                btn.className = "px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-600 text-white border border-emerald-400 transition animate-pulse";
+                btn.innerText = "⚡ Demo ON";
+                // Datos simulados: 120 atendidos (verde), 50 sin com (amarillo)
+                updateTxFluid({
+                    tot_casos: 3584,
+                    casos_auditados: 170,
+                    casos_atendidos: 120,
+                    casos_sin_com: 50,
+                    casos_pendientes: 3414
+                });
+                triggerTxSpark();
+            } else {
+                btn.className = "px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition";
+                btn.innerText = "🧪 Demo";
+                loadGlobalStats();
+            }
+        }
+
+        // Actualizar visual del fluido dentro del transformador
+        function updateTxFluid(data) {
+            if (isDemoMode && data.casos_auditados === 0) return;
+
+            const tot = Number(data.tot_casos) || 1;
+            const aud = Number(data.casos_auditados) || 0;
+            const atendidos = Number(data.casos_atendidos) || 0;
+            const sin_com = Number(data.casos_sin_com) || 0;
+            const pendientes = Number(data.casos_pendientes) || 0;
+
+            // Detectar nueva llamada para disparar arco eléctrico
+            if (lastLoggedAuditCount !== -1 && aud > lastLoggedAuditCount) {
+                triggerTxSpark();
+            }
+            lastLoggedAuditCount = aud;
+
+            // Altura total del visor de cristal en el SVG (y va de 66 a 190 => altura max = 124)
+            const maxH = 124;
+            const baseY = 190; // fondo del cristal
+
+            // Base para la escala de llenado
+            let capacityBase = tot;
+            if (txScaleMode === 'shift') {
+                capacityBase = Math.max(aud * 1.3, 100);
+            }
+
+            let pctGreen = (atendidos / capacityBase) * 100;
+            let pctAmber = (sin_com / capacityBase) * 100;
+
+            let hGreen = Math.min((pctGreen / 100) * maxH, maxH);
+            let hAmber = Math.min((pctAmber / 100) * maxH, maxH - hGreen);
+
+            // Mínimo visual de 6px si hay llamadas
+            if (atendidos > 0 && hGreen < 7) hGreen = 7;
+            if (sin_com > 0 && hAmber < 7) hAmber = 7;
+
+            // Actualizar capa verde (fondo del tanque)
+            const yGreen = baseY - hGreen;
+            const greenRect = document.getElementById('tx-green-rect');
+            const greenWave = document.getElementById('tx-green-wave');
+
+            if (greenRect) {
+                greenRect.setAttribute('y', yGreen);
+                greenRect.setAttribute('height', hGreen);
+            }
+            if (greenWave) {
+                if (hGreen > 0) {
+                    greenWave.style.display = 'block';
+                    greenWave.setAttribute('transform', `translate(-60, ${yGreen - 3})`);
+                } else {
+                    greenWave.style.display = 'none';
+                }
+            }
+
+            // Actualizar capa amarilla (directamente encima de la verde)
+            const yAmber = yGreen - hAmber;
+            const amberRect = document.getElementById('tx-amber-rect');
+            const amberWave = document.getElementById('tx-amber-wave');
+
+            if (amberRect) {
+                amberRect.setAttribute('y', yAmber);
+                amberRect.setAttribute('height', hAmber);
+            }
+            if (amberWave) {
+                if (hAmber > 0) {
+                    amberWave.style.display = 'block';
+                    amberWave.setAttribute('transform', `translate(-40, ${yAmber - 3})`);
+                } else {
+                    amberWave.style.display = 'none';
+                }
+            }
+
+            // Ocultar standby layer si el fluido supera 15px
+            const standbyLayer = document.getElementById('tx-standby-layer');
+            if (standbyLayer) {
+                standbyLayer.style.opacity = (hGreen + hAmber) > 12 ? '0' : '1';
+            }
+
+            // Textos digitales del HUD
+            const pctGreenReal = tot > 0 ? ((atendidos / tot) * 100).toFixed(1) : '0.0';
+            const pctAmberReal = tot > 0 ? ((sin_com / tot) * 100).toFixed(1) : '0.0';
+
+            const statGreen = document.getElementById('tx-stat-green');
+            const statAmber = document.getElementById('tx-stat-amber');
+            const statPending = document.getElementById('tx-stat-pending');
+
+            if (statGreen) statGreen.innerText = `${atendidos.toLocaleString()} (${pctGreenReal}%)`;
+            if (statAmber) statAmber.innerText = `${sin_com.toLocaleString()} (${pctAmberReal}%)`;
+            if (statPending) statPending.innerText = `${pendientes.toLocaleString()} Casos`;
+        }
+
+        // Cargar Estadísticas Globales
+        async function loadGlobalStats() {
+            if (isDemoMode) return;
+            try {
+                const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
+                const res = await fetch(`/api/stats?periodo=${p}`);
+                const data = await res.json();
+
+                document.getElementById('kpi-total').innerText = Number(data.tot_casos).toLocaleString();
+                document.getElementById('kpi-clientes').innerText = `${Number(data.tot_clientes).toLocaleString()} Denunciantes`;
+                document.getElementById('kpi-auditados').innerText = Number(data.casos_auditados).toLocaleString();
+                document.getElementById('kpi-pct-avance').innerText = `${data.pct_avance}%`;
+                document.getElementById('kpi-pendientes').innerText = `Pendientes: ${Number(data.casos_pendientes).toLocaleString()}`;
+                document.getElementById('kpi-atendidos').innerText = Number(data.casos_atendidos).toLocaleString();
+                document.getElementById('kpi-efectividad').innerText = `${data.pct_efectividad}%`;
+                document.getElementById('kpi-sin-com').innerText = Number(data.casos_sin_com).toLocaleString();
+                document.getElementById('kpi-campo').innerText = Number(data.casos_requieren_campo).toLocaleString();
+                document.getElementById('kpi-inconsistencias').innerText = Number(data.casos_inconsistentes).toLocaleString();
+                document.getElementById('kpi-devueltos').innerText = `Devueltos: ${data.casos_devueltos}`;
+
+                // Actualizar simulación de fluido dieléctrico del TX
+                updateTxFluid(data);
+
+            } catch (err) {
+                console.error("Error cargando stats:", err);
+            }
+        }
+
+        // Cargar Estadísticas de los 15 Operadores (Compacto para que quepan todos)
+        async function loadOperators() {
+            try {
+                const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
+                const res = await fetch(`/api/operators_stats?periodo=${p}`);
+                const ops = await res.json();
+
+                const grid = document.getElementById('operators-grid');
+                grid.innerHTML = '';
+
+                ops.forEach(op => {
+                    const card = document.createElement('div');
+                    const topBorderColor = op.is_active ? "border-t-emerald-400" : "border-t-cyan-400";
+                    card.className = `bg-slate-900/95 hover:bg-slate-800/90 rounded-xl p-1.5 sm:p-2 border border-slate-600/90 border-t-[3px] ${topBorderColor} flex flex-col justify-between transition-all duration-200 shadow-md shadow-black/40 hover:border-cyan-300 h-full overflow-hidden`;
+                    
+                    const dotClass = op.is_active ? "bg-emerald-400 pulse-dot" : "bg-slate-600";
+                    const statusText = op.is_active ? "Llamando" : "Pausa";
+                    const statusTextColor = op.is_active ? "text-emerald-400" : "text-slate-400";
+                    
+                    let barColor = "bg-blue-500";
+                    if (op.pct_avance >= 50) barColor = "bg-emerald-500";
+                    else if (op.pct_avance >= 25) barColor = "bg-cyan-400";
+
+                    card.innerHTML = `
+                        <div class="flex flex-col justify-between">
+                            <!-- Cabecera: Nombre y Estado -->
+                            <div class="flex items-center justify-between mb-1 gap-1">
+                                <span class="text-xs sm:text-sm font-black text-white tracking-wide truncate max-w-[120px]">${op.id}. ${op.nombre}</span>
+                                <span class="flex items-center gap-1 text-[9px] font-extrabold ${statusTextColor} bg-slate-950 px-1.5 py-0.5 rounded-md border border-slate-700/80 shrink-0">
+                                    <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span> ${statusText}
+                                </span>
+                            </div>
+                            
+                            <!-- Avance General con Números Grandes -->
+                            <div class="flex items-baseline justify-between mb-0.5">
+                                <span class="text-[9px] font-black uppercase tracking-wider text-slate-400">Avance</span>
+                                <div class="font-mono flex items-baseline">
+                                    <span class="text-base sm:text-lg font-black text-cyan-300 leading-none">${op.auditados}</span>
+                                    <span class="text-xs text-slate-400 font-bold ml-0.5">/${op.tot_casos}</span>
+                                    <span class="text-[9px] font-black text-cyan-400/80 ml-1">(${op.pct_avance}%)</span>
+                                </div>
+                            </div>
+
+                            <!-- Barra de progreso -->
+                            <div class="w-full bg-slate-950 rounded-full h-1.5 mb-1 overflow-hidden border border-slate-700/60">
+                                <div class="${barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${Math.min(op.pct_avance, 100)}%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Cajas Métricas con Números Grandes y Alto Contraste (ATEND, SIN COM, CAMPO) -->
+                        <div class="grid grid-cols-3 gap-1 pt-1 border-t border-slate-600/80 text-center shrink-0">
+                            <!-- Atendidos -->
+                            <div class="bg-emerald-950/70 border border-emerald-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
+                                <span class="block text-[8px] sm:text-[9px] font-black uppercase text-emerald-300 tracking-wider">Atend</span>
+                                <span class="text-base sm:text-lg font-black text-emerald-400 font-mono leading-none">${op.atendidos}</span>
+                            </div>
+                            <!-- Sin Comunicación -->
+                            <div class="bg-amber-950/70 border border-amber-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
+                                <span class="block text-[8px] sm:text-[9px] font-black uppercase text-amber-300 tracking-wider">Sin Com</span>
+                                <span class="text-base sm:text-lg font-black text-amber-400 font-mono leading-none">${op.sin_com}</span>
+                            </div>
+                            <!-- Campo -->
+                            <div class="bg-rose-950/70 border border-rose-500/40 rounded-lg py-0.5 px-0.5 shadow-sm">
+                                <span class="block text-[8px] sm:text-[9px] font-black uppercase text-rose-300 tracking-wider">Campo</span>
+                                <span class="text-base sm:text-lg font-black text-rose-400 font-mono leading-none">${op.campo}</span>
+                            </div>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Error cargando operadores:", err);
+            }
+        }
+
+        // Cargar Parroquias Críticas con barras de fluido individuales
+        async function loadParishes() {
+            try {
+                const p = (txScaleMode === 'shift') ? 'diario' : 'historico';
+                const res = await fetch(`/api/parish_stats?periodo=${p}`);
+                const parishes = await res.json();
+                const list = document.getElementById('parish-list');
+                list.innerHTML = '';
+
+                parishes.slice(0, 5).forEach((p, idx) => {
+                    const total = p.total || 1;
+                    const atendidos = p.atendidos || 0;
+                    const sin_com = p.sin_com || 0;
+                    const pctGreen = Math.min((atendidos / total) * 100, 100);
+                    const pctAmber = Math.min((sin_com / total) * 100, 100 - pctGreen);
+
+                    const item = document.createElement('div');
+                    item.className = "p-1.5 rounded-lg bg-slate-800/70 border border-slate-700/50 flex flex-col gap-1 transition hover:bg-slate-800";
+                    item.innerHTML = `
+                        <div class="flex items-center justify-between text-[11px]">
+                            <div class="truncate max-w-[130px]">
+                                <span class="font-extrabold text-white text-[11px] truncate block">${idx+1}. ${p.parroquia}</span>
+                                <span class="block text-[9px] text-slate-400 truncate">${p.municipio}</span>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono">${p.casos_tx} TX</span>
+                                <span class="block text-[9px] text-slate-400">${atendidos}/${total} Atend.</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Barra de fluido en miniatura por parroquia (Verde y Amarillo) -->
+                        <div class="w-full bg-slate-950/80 rounded-full h-1.5 overflow-hidden flex border border-slate-800">
+                            <div class="bg-emerald-500 h-1.5 transition-all duration-500" style="width: ${pctGreen}%;" title="Atendidos: ${atendidos}"></div>
+                            <div class="bg-amber-400 h-1.5 transition-all duration-500" style="width: ${pctAmber}%;" title="Sin Comunicación: ${sin_com}"></div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            } catch (err) {
+                console.error("Error cargando parroquias:", err);
+            }
+        }
+
+        // Cargar Ticker en vivo
+        async function loadTicker() {
+            try {
+                const res = await fetch('/api/recent_logs');
+                const logs = await res.json();
+                if (logs.length > 0) {
+                    const tickerText = logs.map(l => `[${l.timestamp.slice(11, 16)}] • ${l.operador_nombre || 'Sistema'}: ${l.detalle}`).join('  —  ');
+                    document.getElementById('live-ticker').innerText = tickerText;
+                }
+            } catch (err) {
+                console.error("Error cargando ticker:", err);
+            }
+        }
+
+        // Loop de actualización automática cada 3.5 segundos
+        async function refreshDashboard() {
+            await Promise.all([
+                loadGlobalStats(),
+                loadOperators(),
+                loadParishes(),
+                loadTicker()
+            ]);
+        }
+
+        refreshDashboard();
+        setInterval(refreshDashboard, 3500);
+
+        async function updateMonitorConsecutivosBadge() {
+            try {
+                const res = await fetch('/api/consecutivos_pendientes_count');
+                const data = await res.json();
+                const badge = document.getElementById('monitor-badge-consecutivos');
+                if (badge) {
+                    badge.innerText = data.pendientes || 0;
+                    if (data.pendientes > 0) {
+                        badge.className = "px-1.5 py-0.2 rounded-full text-[9px] bg-rose-600 text-white font-black animate-pulse";
+                    } else {
+                        badge.className = "px-1.5 py-0.2 rounded-full text-[9px] bg-slate-900 text-amber-300 font-black";
+                    }
+                }
+            } catch (e) {}
+        }
+
+    </script>
+</body>
+</html>
