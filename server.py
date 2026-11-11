@@ -154,9 +154,9 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             }
             if path in filename_map:
                 fname = filename_map[path]
-                target_file = os.path.join(PUBLIC_DIR, fname)
+                target_file = os.path.join(BASE_DIR, fname)
                 if not os.path.exists(target_file):
-                    target_file = os.path.join(BASE_DIR, fname)
+                    target_file = os.path.join(PUBLIC_DIR, fname)
                 if os.path.exists(target_file):
                     with open(target_file, "rb") as f:
                         data = f.read()
