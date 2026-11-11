@@ -20,7 +20,7 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DB_PATH = os.path.join(BASE_DIR, "sala_situacional.db")
+DB_PATH = os.environ.get("SALA_DB", os.path.join(BASE_DIR, "sala_situacional.db"))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 WORKSPACE_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -421,6 +421,19 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.close()
             self.send_json(rows)
 
+        # Listar casos de Consecutivos en Línea / Pegasus
+        elif path == "/api/consecutivos_list":
+            cur.execute("""
+            SELECT c.*, o.nombre as operador_nombre
+            FROM casos c
+            JOIN operadores o ON c.operador_id = o.id
+            WHERE c.consecutivo_linea = 1
+            ORDER BY c.consecutivo_impreso ASC, c.actualizado_en DESC, c.id DESC
+            """)
+            rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            self.send_json(rows)
+
         # Consecutivos en Línea: Contador de Pendientes
         elif path == "/api/consecutivos_pendientes_count":
             cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
@@ -553,6 +566,76 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.close()
             self.send_json(rows)
 
+        # Exportar Consolidado General (.xlsx) con descarga directa al navegador
+        elif path == "/api/export_excel":
+            import io
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Casos y Auditoría"
+            ws.views.sheetView[0].showGridLines = True
+
+            cur.execute("""
+            SELECT c.*, o.nombre as operador_nombre
+            FROM casos c
+            JOIN operadores o ON c.operador_id = o.id
+            ORDER BY c.operador_id, c.id_llamada
+            """)
+            rows = cur.fetchall()
+
+            headers = [
+                "OPERADOR", "ESTADO_AUDITORIA", "ID_LLAMADA", "CASO_NRO", "MUNICIPIO", "PARROQUIA",
+                "CEDULA", "DENUNCIANTE", "TELEFONO_1", "TELEFONO_2", "SECTOR", "DIRECCION",
+                "POSTE_DETECTADO", "CODIGO_CASO", "FECHA_GENERADO", "CATEGORIA_HOMOLOGADA",
+                "SUBCATEGORIA", "DESCRIPCION_REPORTE", "ESTATUS_LLAMADA", "¿ESTE_CASO_PERSISTE?",
+                "REQUIERE_CAMPO", "FECHA_CONTACTO", "OBSERVACIONES", "POSTE_CONFIRMADO",
+                "INCONSISTENCIA_ALERTA", "MOTIVO_INCONSISTENCIA", "CONSECUTIVO_LINEA"
+            ]
+            ws.append(headers)
+
+            font_head = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+            fill_head = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+            for c_i in range(1, len(headers) + 1):
+                c = ws.cell(row=1, column=c_i)
+                c.font = font_head
+                c.fill = fill_head
+                c.alignment = Alignment(horizontal="center", vertical="center")
+
+            for r in rows:
+                ws.append([
+                    r["operador_nombre"], r["estado_auditoria"], r["id_llamada"], r["caso_nro"],
+                    r["municipio"], r["parroquia"], r["cedula"], r["denunciante"], r["telefono_1"],
+                    r["telefono_2"], r["sector"], r["direccion"], r["poste_detectado"], r["codigo_caso"],
+                    r["fecha_generado"], r["categoria_homologada"], r["subcategoria"], r["descripcion_reporte"],
+                    r["estatus_llamada"], r["persiste"], r["requiere_campo"], r["fecha_contacto"],
+                    r["observaciones"], r["poste_confirmado"], "SÍ" if r["inconsistencia_flag"] else "NO",
+                    r["inconsistencia_motivo"], "SÍ" if r["consecutivo_linea"] else "NO"
+                ])
+
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 60)
+
+            conn.close()
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            data_bytes = buf.getvalue()
+            wb.close()
+
+            fecha_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"CONSOLIDADO_SALA_SITUACIONAL_{fecha_tag}.xlsx"
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Content-Length', str(len(data_bytes)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(data_bytes)
+            return
+
         # 11. Exportar Casos para Recategorizar (.xlsx)
         elif path == "/api/export_recategorizacion":
             out_file = os.path.join(WORKSPACE_DIR, "INFORME_CASOS_PARA_RECATEGORIZAR.xlsx")
@@ -599,10 +682,25 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 col_letter = get_column_letter(col[0].column)
                 ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
 
-            wb.save(out_file)
+            import io
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            data_bytes = buf.getvalue()
             wb.close()
             conn.close()
-            self.send_json({"success": True, "file": out_file, "total_casos": len(rows)})
+
+            fecha_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"CASOS_PARA_RECATEGORIZAR_{fecha_tag}.xlsx"
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Content-Length', str(len(data_bytes)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(data_bytes)
+            return
 
         # 12. Listar Casos Desestimados para Supervisor
         elif path == "/api/supervisor/desestimados":
@@ -666,10 +764,25 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 col_letter = get_column_letter(col[0].column)
                 ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
 
-            wb.save(out_file)
+            import io
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            data_bytes = buf.getvalue()
             wb.close()
             conn.close()
-            self.send_json({"success": True, "file": out_file, "total_casos": len(rows)})
+
+            fecha_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"CASOS_PARA_RECATEGORIZAR_{fecha_tag}.xlsx"
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header('Content-Length', str(len(data_bytes)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.end_headers()
+            self.wfile.write(data_bytes)
+            return
 
         else:
             conn.close()
