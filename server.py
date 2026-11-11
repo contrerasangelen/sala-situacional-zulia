@@ -47,6 +47,20 @@ def init_db_schema():
             cur.execute("ALTER TABLE casos ADD COLUMN desestimado_aprobado INTEGER DEFAULT 0")
         if "inconsistencia_aprobada" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN inconsistencia_aprobada INTEGER DEFAULT 0")
+
+        # Column 'grupo' in operadores
+        op_cols = [r[1] for r in cur.execute("PRAGMA table_info(operadores)").fetchall()]
+        if "grupo" not in op_cols:
+            cur.execute("ALTER TABLE operadores ADD COLUMN grupo TEXT DEFAULT 'PRINCIPAL'")
+        cur.execute("UPDATE operadores SET grupo = 'PRINCIPAL' WHERE id <= 15")
+        cur.execute("UPDATE operadores SET grupo = 'HISTORICO' WHERE id = 99")
+        for i in range(16, 26):
+            num_str = f"{i-15:02d}"
+            cur.execute("""
+                INSERT INTO operadores (id, nombre, pestaña, pin, activo, grupo)
+                VALUES (?, ?, ?, '1234', 1, 'APOYO')
+                ON CONFLICT(id) DO UPDATE SET grupo = 'APOYO'
+            """, (i, f"APOYO {num_str}", f"AP{num_str} - APOYO {i-15}"))
         conn.commit()
     except Exception as e:
         print("Schema init notice:", e)
@@ -253,9 +267,17 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             if date_filter_sql:
                 sub_date = date_filter_sql.replace("fecha_contacto", "c.fecha_contacto").replace("actualizado_en", "c.actualizado_en")
 
+            grupo_param = (query.get("grupo", [None])[0] or "").lower()
+            where_ops = "WHERE o.id != 99"
+            if grupo_param == "principal":
+                where_ops += " AND o.id <= 15"
+            elif grupo_param == "apoyo":
+                where_ops += " AND o.id > 15 AND o.id != 99"
+
             cur.execute(f"""
             SELECT 
                 o.id, o.nombre, o.pestaña, o.ultima_actividad, o.activo,
+                COALESCE(o.grupo, CASE WHEN o.id <= 15 THEN 'PRINCIPAL' ELSE 'APOYO' END) as grupo,
                 COUNT(CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00') THEN 1 END) as tot_casos,
                 COUNT(DISTINCT CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00') THEN c.id_llamada END) as tot_clientes,
                 SUM(CASE WHEN c.estatus_llamada IS NOT NULL AND c.estatus_llamada != '' {sub_date} THEN 1 ELSE 0 END) as auditados,
@@ -267,7 +289,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 SUM(CASE WHEN c.devuelto_flag = 1 THEN 1 ELSE 0 END) as devueltos
             FROM operadores o
             LEFT JOIN casos c ON o.id = c.operador_id
-            WHERE o.id <= 15
+            {where_ops}
             GROUP BY o.id
             ORDER BY o.id
             """, date_params * 6 if sub_date else ())
@@ -345,7 +367,13 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
         # 6. Lista de operadores
         elif path == "/api/operators_list":
-            cur.execute("SELECT id, nombre, pestaña, activo FROM operadores ORDER BY id")
+            grupo_param = (query.get("grupo", [None])[0] or "").lower()
+            where_ops = "WHERE id != 99"
+            if grupo_param == "principal":
+                where_ops += " AND id <= 15"
+            elif grupo_param == "apoyo":
+                where_ops += " AND id > 15 AND id != 99"
+            cur.execute(f"SELECT id, nombre, pestaña, activo, COALESCE(grupo, CASE WHEN id <= 15 THEN 'PRINCIPAL' ELSE 'APOYO' END) as grupo FROM operadores {where_ops} ORDER BY id")
             rows = [dict(r) for r in cur.fetchall()]
             conn.close()
             self.send_json(rows)
