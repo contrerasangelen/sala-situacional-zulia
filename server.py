@@ -48,6 +48,9 @@ def init_db_schema():
         if "inconsistencia_aprobada" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN inconsistencia_aprobada INTEGER DEFAULT 0")
 
+        if "operador_nombre" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN operador_nombre TEXT")
+
         # Column 'grupo' in operadores
         op_cols = [r[1] for r in cur.execute("PRAGMA table_info(operadores)").fetchall()]
         if "grupo" not in op_cols:
@@ -852,6 +855,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             cur.execute("UPDATE operadores SET ultima_actividad = ? WHERE id = ?", (now_str, op_id))
+            op_row = cur.execute("SELECT nombre FROM operadores WHERE id = ?", (op_id,)).fetchone()
+            op_nombre_real = op_row[0] if op_row else f"OP_{op_id}"
             warnings_total = []
 
             for cu in cases_updates:
@@ -881,9 +886,10 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                     inconsistencia_motivo = ?,
                     devuelto_flag = 0,
                     consecutivo_linea = ?,
+                    operador_nombre = ?,
                     actualizado_en = ?
                 WHERE id = ? AND operador_id = ?
-                """, (est, persiste, campo, now_str[:10], obs, poste_conf, incons_flag, incons_motivo, consecutivo_val, now_str, c_id, op_id))
+                """, (est, persiste, campo, now_str[:10], obs, poste_conf, incons_flag, incons_motivo, consecutivo_val, op_nombre_real, now_str, c_id, op_id))
 
                 if warns:
                     warnings_total.extend(warns)
