@@ -245,13 +245,28 @@
                 const ops = await res.json();
                 const sel = document.getElementById('operator-select');
                 sel.innerHTML = '<option value="">-- Elige tu Nombre --</option>';
+
+                const grpPrinc = document.createElement('optgroup');
+                grpPrinc.label = "🏢 Operadores Principales (1 - 15)";
+                const grpApoyo = document.createElement('optgroup');
+                grpApoyo.label = "🤝 Personal de Apoyo (16 - 25)";
+
                 ops.forEach(op => {
+                    if (op.id === 99) return;
                     const opt = document.createElement('option');
                     opt.value = op.id;
                     opt.innerText = `${op.id}. ${op.nombre}`;
                     if (op.id == currentOperatorId) opt.selected = true;
-                    sel.appendChild(opt);
+                    if (op.id <= 15) {
+                        grpPrinc.appendChild(opt);
+                    } else {
+                        grpApoyo.appendChild(opt);
+                    }
                 });
+
+                if (grpPrinc.children.length > 0) sel.appendChild(grpPrinc);
+                if (grpApoyo.children.length > 0) sel.appendChild(grpApoyo);
+
                 if (currentOperatorId) onOperatorChange();
             } catch (e) {
                 console.error("Error cargando operadores:", e);

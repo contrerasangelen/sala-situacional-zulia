@@ -124,7 +124,15 @@
         <!-- MATRIZ DE LOS 15 OPERADORES -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow">
             <div class="p-4 border-b border-slate-800 flex justify-between items-center">
-                <h3 class="text-sm font-bold text-white uppercase tracking-wider">Desempeño Individual de Operadores en el Período</h3>
+                <div class="flex items-center gap-3">
+                    <h3 class="text-sm font-bold text-white uppercase tracking-wider">Desempeño Individual de Operadores</h3>
+                    <!-- FILTRO POR GRUPO -->
+                    <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <button onclick="filterOperatorsTable('todos')" id="btn-filt-todos" class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white transition">Todos (25)</button>
+                        <button onclick="filterOperatorsTable('principal')" id="btn-filt-princ" class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-300 hover:text-white transition">🏢 Principales (15)</button>
+                        <button onclick="filterOperatorsTable('apoyo')" id="btn-filt-apoyo" class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-300 hover:text-white transition">🤝 Apoyo (10)</button>
+                    </div>
+                </div>
                 <span class="text-xs text-slate-400">Actualización en vivo</span>
             </div>
             <div class="overflow-x-auto">
@@ -180,9 +188,9 @@
                 <div class="flex justify-between items-center mb-2">
                     <label class="text-xs font-bold text-slate-300 uppercase">2. Seleccionar Operadores Activos Hoy (¿Quiénes vinieron a trabajar?):</label>
                     <div class="flex gap-2">
-                        <button onclick="toggleAllOps(true)" class="text-[11px] text-blue-400 font-bold hover:underline">Marcar Todos (15)</button>
+                        <button onclick="toggleAllOps(true)" class="text-[11px] text-blue-400 font-bold hover:underline">Marcar Todos (25)</button>
                         <span class="text-slate-600">|</span>
-                        <button onclick="toggleAllOps(false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                        <button onclick="toggleAllOps(false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar Todos</button>
                     </div>
                 </div>
 
@@ -518,42 +526,87 @@
 
                 let totCasos = 0, totAud = 0, totAtend = 0, totSin = 0, totPor = 0, totCamp = 0, totIncons = 0;
 
-                operatorsData.forEach(op => {
-                    totCasos += (op.tot_casos || 0);
-                    totAud += (op.auditados || 0);
-                    totAtend += (op.atendidos || 0);
-                    totSin += (op.sin_com || 0);
-                    totPor += (op.por_atender || 0);
-                    totCamp += (op.campo || 0);
-                    totIncons += (op.inconsistencias || 0);
+                renderOperatorsTableRows();
 
-                    const tr = document.createElement('tr');
-                    tr.className = "hover:bg-slate-800/40 transition";
-                    tr.innerHTML = `
-                        <td class="p-3 font-bold text-white flex items-center gap-2">
+        let tableGroupFilter = 'todos';
+
+        function filterOperatorsTable(group) {
+            tableGroupFilter = group;
+            ['todos', 'princ', 'apoyo'].forEach(g => {
+                const btn = document.getElementById(`btn-filt-${g}`);
+                if (btn) btn.className = (g === (group === 'principal' ? 'princ' : group))
+                    ? "px-2 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white transition"
+                    : "px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-300 hover:text-white transition";
+            });
+            renderOperatorsTableRows();
+        }
+
+        function renderOperatorsTableRows() {
+            const tbody = document.getElementById('table-operators-body');
+            tbody.innerHTML = '';
+
+            let totCasos = 0, totAud = 0, totAtend = 0, totSin = 0, totPor = 0, totCamp = 0, totIncons = 0;
+
+            const filteredOps = operatorsData.filter(op => {
+                if (op.id === 99) return false;
+                if (tableGroupFilter === 'principal') return op.id <= 15;
+                if (tableGroupFilter === 'apoyo') return op.id > 15;
+                return true;
+            });
+
+            filteredOps.forEach(op => {
+                totCasos += (op.tot_casos || 0);
+                totAud += (op.auditados || 0);
+                totAtend += (op.atendidos || 0);
+                totSin += (op.sin_com || 0);
+                totPor += (op.por_atender || 0);
+                totCamp += (op.campo || 0);
+                totIncons += (op.inconsistencias || 0);
+
+                const isPrinc = op.id <= 15;
+                const badgeGrupo = isPrinc
+                    ? '<span class="text-[9px] px-1.5 py-0.5 rounded font-black bg-blue-900/60 text-blue-300 border border-blue-700/60">PRINCIPAL</span>'
+                    : '<span class="text-[9px] px-1.5 py-0.5 rounded font-black bg-emerald-900/60 text-emerald-300 border border-emerald-700/60">APOYO</span>';
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition";
+                tr.innerHTML = `
+                    <td class="p-3 font-bold text-white flex items-center justify-between">
+                        <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full ${op.is_active ? 'bg-emerald-400' : 'bg-slate-600'}"></span>
-                            ${op.id}. ${op.nombre}
-                        </td>
-                        <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${op.activo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}">${op.activo ? 'ACTIVO' : 'INACTIVO'}</span></td>
-                        <td class="p-3 font-mono text-[11px] text-slate-400">${op.ultima_actividad ? op.ultima_actividad.slice(11) : 'Sin llamadas'}</td>
-                        <td class="p-3 text-center">${op.tot_clientes}</td>
-                        <td class="p-3 text-center font-bold">${op.tot_casos}</td>
-                        <td class="p-3 text-center font-black text-cyan-400">${op.auditados}</td>
-                        <td class="p-3 text-center font-bold">${op.pct_avance}%</td>
-                        <td class="p-3 text-center font-black text-emerald-400">${op.atendidos}</td>
-                        <td class="p-3 text-center font-bold text-emerald-300">${op.pct_efectividad}%</td>
-                        <td class="p-3 text-center font-bold text-amber-400">${op.sin_com}</td>
-                        <td class="p-3 text-center font-bold text-blue-400">${op.por_atender}</td>
-                        <td class="p-3 text-center font-bold text-rose-400">${op.campo}</td>
-                        <td class="p-3 text-center font-bold ${op.inconsistencias > 0 ? 'text-purple-400 bg-purple-950/20' : 'text-slate-500'}">${op.inconsistencias}</td>
-                        <td class="p-3 text-center">
-                            <button onclick="openEditOperatorModal(${op.id}, '${op.nombre.replace(/'/g, "\\'")}', ${op.activo ? 1 : 0})" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700 transition flex items-center gap-1 mx-auto shadow-sm">
-                                ✏️ Modificar
-                            </button>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                            <span>${op.id}. ${op.nombre}</span>
+                        </div>
+                        ${badgeGrupo}
+                    </td>
+                    <td class="p-3 text-center font-bold text-slate-300">${op.tot_casos || 0}</td>
+                    <td class="p-3 text-center font-bold text-cyan-400">${op.auditados || 0}</td>
+                    <td class="p-3 text-center font-bold text-slate-400">${(op.tot_casos || 0) - (op.auditados || 0)}</td>
+                    <td class="p-3 text-center font-bold ${op.pct_avance >= 50 ? 'text-emerald-400' : 'text-slate-300'}">${op.pct_avance || 0}%</td>
+                    <td class="p-3 text-center font-bold text-emerald-400">${op.atendidos || 0}</td>
+                    <td class="p-3 text-center font-bold text-amber-400">${op.sin_com || 0}</td>
+                    <td class="p-3 text-center font-bold text-blue-400">${op.por_atender || 0}</td>
+                    <td class="p-3 text-center font-bold text-rose-400">${op.campo || 0}</td>
+                    <td class="p-3 text-center font-bold ${op.inconsistencias > 0 ? 'text-purple-400 bg-purple-950/20' : 'text-slate-500'}">${op.inconsistencias}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="openEditOperatorModal(${op.id}, '${op.nombre.replace(/'/g, "\'")}', ${op.activo ? 1 : 0})" class="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700 transition flex items-center gap-1 mx-auto shadow-sm">
+                            ✏️ Modificar
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Resumen Totales pie de tabla
+            document.getElementById('sum-total').innerText = totCasos.toLocaleString();
+            document.getElementById('sum-audit').innerText = totAud.toLocaleString();
+            document.getElementById('sum-pend').innerText = (totCasos - totAud).toLocaleString();
+            document.getElementById('sum-avance').innerText = (totCasos ? (totAud / totCasos * 100).toFixed(1) : 0) + '%';
+            document.getElementById('sum-atend').innerText = totAtend.toLocaleString();
+            document.getElementById('sum-sin').innerText = totSin.toLocaleString();
+            document.getElementById('sum-por').innerText = totPor.toLocaleString();
+            document.getElementById('sum-campo').innerText = totCamp.toLocaleString();
+            document.getElementById('sum-incons').innerText = totIncons.toLocaleString();
+        }
 
                 // Totales
                 const trTot = document.createElement('tr');
@@ -608,16 +661,72 @@
             const cont = document.getElementById('ops-checkboxes');
             if (cont.children.length > 0) return; // ya cargado
             cont.innerHTML = '';
+            cont.className = "space-y-4";
 
-            operatorsData.forEach(op => {
+            const princOps = operatorsData.filter(o => o.id <= 15 && o.id !== 99);
+            const apoyoOps = operatorsData.filter(o => o.id > 15 && o.id !== 99);
+
+            // Sección 1: Operadores Principales
+            const secPrinc = document.createElement('div');
+            secPrinc.className = "bg-slate-900/80 p-3 rounded-xl border border-slate-800";
+            secPrinc.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold text-blue-400 uppercase flex items-center gap-1.5">
+                        🏢 Operadores Principales (1 a 15)
+                    </span>
+                    <div class="flex gap-2">
+                        <button onclick="toggleGroupOps('principal', true)" class="text-[11px] text-blue-400 font-bold hover:underline">Marcar (15)</button>
+                        <span class="text-slate-600">|</span>
+                        <button onclick="toggleGroupOps('principal', false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                    </div>
+                </div>
+                <div id="grid-ops-princ" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
+            `;
+            cont.appendChild(secPrinc);
+
+            const gridP = secPrinc.querySelector('#grid-ops-princ');
+            princOps.forEach(op => {
                 const label = document.createElement('label');
                 label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-blue-500 text-xs text-white";
                 label.innerHTML = `
-                    <input type="checkbox" value="${op.id}" class="op-checkbox text-blue-600 rounded" checked>
+                    <input type="checkbox" value="${op.id}" data-grupo="principal" class="op-checkbox text-blue-600 rounded" checked>
                     <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
                 `;
-                cont.appendChild(label);
+                gridP.appendChild(label);
             });
+
+            // Sección 2: Personal de Apoyo
+            const secApoyo = document.createElement('div');
+            secApoyo.className = "bg-slate-900/80 p-3 rounded-xl border border-emerald-900/40";
+            secApoyo.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold text-emerald-400 uppercase flex items-center gap-1.5">
+                        🤝 Personal de Apoyo (16 a 25)
+                    </span>
+                    <div class="flex gap-2">
+                        <button onclick="toggleGroupOps('apoyo', true)" class="text-[11px] text-emerald-400 font-bold hover:underline">Marcar (10)</button>
+                        <span class="text-slate-600">|</span>
+                        <button onclick="toggleGroupOps('apoyo', false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                    </div>
+                </div>
+                <div id="grid-ops-apoyo" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
+            `;
+            cont.appendChild(secApoyo);
+
+            const gridA = secApoyo.querySelector('#grid-ops-apoyo');
+            apoyoOps.forEach(op => {
+                const label = document.createElement('label');
+                label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-emerald-500 text-xs text-white";
+                label.innerHTML = `
+                    <input type="checkbox" value="${op.id}" data-grupo="apoyo" class="op-checkbox text-emerald-600 rounded" checked>
+                    <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
+                `;
+                gridA.appendChild(label);
+            });
+        }
+
+        function toggleGroupOps(group, checked) {
+            document.querySelectorAll(`.op-checkbox[data-grupo="${group}"]`).forEach(cb => cb.checked = checked);
         }
 
         function toggleAllOps(checked) {
