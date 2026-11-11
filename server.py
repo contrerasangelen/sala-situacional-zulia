@@ -301,8 +301,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             SELECT 
                 o.id, o.nombre, o.pestaña, o.ultima_actividad, o.activo,
                 COALESCE(o.grupo, CASE WHEN o.id <= 15 THEN 'PRINCIPAL' ELSE 'APOYO' END) as grupo,
-                COUNT(CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00') THEN 1 END) as tot_casos,
-                COUNT(DISTINCT CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00') THEN c.id_llamada END) as tot_clientes,
+                COUNT(CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', 'localtime')) THEN 1 END) as tot_casos,
+                COUNT(DISTINCT CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', 'localtime')) THEN c.id_llamada END) as tot_clientes,
                 SUM(CASE WHEN c.estatus_llamada IS NOT NULL AND c.estatus_llamada != '' {sub_date} THEN 1 ELSE 0 END) as auditados,
                 SUM(CASE WHEN c.estatus_llamada IN ('ATENDIDO', 'ATENDIDO POR TERCEROS') {sub_date} THEN 1 ELSE 0 END) as atendidos,
                 SUM(CASE WHEN c.estatus_llamada IN ('SIN COMUNICACIÓN', 'SIN INFORMACION') {sub_date} THEN 1 ELSE 0 END) as sin_com,
@@ -426,7 +426,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             WHERE c.operador_id = ? AND (
                 c.devuelto_flag = 1
                 OR c.estado_auditoria IN ('PENDIENTE', 'DEVUELTO_CORRECCION')
-                OR (c.estado_auditoria = 'GESTIONADO' AND c.actualizado_en >= '2026-11-10 00:00:00')
+                OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', 'localtime'))
             )
             GROUP BY cli.id_llamada
             ORDER BY 

@@ -454,8 +454,12 @@
     </section>
 
     <script>
-        let operatorsData = [];
-        let currentPeriod = 'historico';
+
+        var tableGroupFilter = 'todos';
+        var currentPeriod = 'historico';
+                    
+        operatorsData = [];
+        currentPeriod = 'historico';
         let customDesde = '';
         let customHasta = '';
 
@@ -570,7 +574,7 @@
                 renderOperatorsTableRows();
                 updateConsecutivosBadges();
 
-        let tableGroupFilter = 'todos';
+        
 
         function filterOperatorsTable(group) {
             tableGroupFilter = group;
