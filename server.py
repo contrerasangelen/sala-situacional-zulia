@@ -1104,13 +1104,32 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
         # MOTOR DE INGESTA, CRUCE Y ASIGNACIÓN INTELIGENTE CON MÚLTIPLES CRITERIOS
         elif path == "/api/supervisor/cross_and_assign":
+            file_base64 = data.get("file_base64", "")
             file_path = data.get("file_path", "")
             active_ops = [int(x) for x in data.get("active_operator_ids", [])]
             criteria = data.get("criteria", "EQUILIBRADO") # EQUILIBRADO, POR_MUNICIPIO, POR_CATEGORIA_TX
             
-            if not file_path or not os.path.exists(file_path):
+            raw_bytes = None
+            if file_base64:
+                import base64
+                if "," in file_base64:
+                    file_base64 = file_base64.split(",", 1)[1]
+                try:
+                    raw_bytes = base64.b64decode(file_base64)
+                except Exception as e:
+                    conn.close()
+                    self.send_json({"error": f"Error decodificando archivo Excel: {str(e)}"}, 400)
+                    return
+            elif file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, "rb") as f:
+                        raw_bytes = f.read()
+                except Exception:
+                    pass
+
+            if not raw_bytes:
                 conn.close()
-                self.send_json({"error": "El archivo especificado no existe."}, 400)
+                self.send_json({"error": "No se recibió ningún archivo Excel (.xlsx) para cruzar."}, 400)
                 return
 
             if not active_ops:
@@ -1119,7 +1138,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             try:
-                wb_new = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+                import io
+                wb_new = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
                 # Seleccionar primera hoja o 'Hoja1' o 'Casos Pendientes'
                 sname = wb_new.sheetnames[0]
                 ws = wb_new[sname]

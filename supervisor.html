@@ -176,11 +176,24 @@
             <!-- PASO 1: SELECCIONAR ARCHIVO -->
             <div class="mb-5 bg-slate-950 p-4 rounded-xl border border-slate-800">
                 <label class="block text-xs font-bold text-slate-300 uppercase mb-2">1. Seleccionar Archivo Nuevo para Cruzar:</label>
-                <div class="flex gap-2">
-                    <select id="file-select" class="flex-grow bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-3 font-semibold"></select>
-                    <button onclick="refreshAvailableFiles()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-bold border border-slate-700">🔄 Buscar</button>
+                
+                <div class="space-y-3">
+                    <!-- Opción A: Cargar desde tu Computadora -->
+                    <div class="p-3 bg-slate-900 rounded-xl border border-blue-900/50">
+                        <span class="block text-xs font-bold text-blue-400 mb-1.5 uppercase">📁 Seleccionar Archivo Excel desde tu Computadora:</span>
+                        <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer bg-slate-800 rounded-xl border border-slate-700 p-1.5">
+                        <p class="text-[11px] text-slate-400 mt-1 italic">Puedes elegir cualquier archivo .xlsx de tu PC (Descargas, Escritorio, etc.).</p>
+                    </div>
+
+                    <!-- Opción B: Archivo del Servidor -->
+                    <div class="p-3 bg-slate-900/50 rounded-xl border border-slate-800">
+                        <span class="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">☁️ O seleccionar archivo pre-cargado en el servidor:</span>
+                        <div class="flex gap-2">
+                            <select id="file-select" class="flex-grow bg-slate-800 text-xs text-white border border-slate-700 rounded-xl p-2 font-semibold"></select>
+                            <button onclick="refreshAvailableFiles()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-bold border border-slate-700">🔄 Buscar</button>
+                        </div>
+                    </div>
                 </div>
-                <p class="text-[11px] text-slate-400 mt-1.5 italic">Se buscan archivos .xlsx en la carpeta Descargas y en el proyecto.</p>
             </div>
 
             <!-- PASO 2: SELECCIONAR OPERADORES ACTIVOS -->
@@ -809,9 +822,12 @@
 
         // Ejecutar Cruce y Asignación Inteligente
         async function executeCrossAndAssign() {
-            const filePath = document.getElementById('file-select').value;
-            if (!filePath) {
-                alert("Selecciona un archivo para cruzar.");
+            const fileInput = document.getElementById('excel-file-input');
+            const uploadedFile = fileInput && fileInput.files && fileInput.files.length > 0 ? fileInput.files[0] : null;
+            const filePath = document.getElementById('file-select') ? document.getElementById('file-select').value : '';
+
+            if (!uploadedFile && !filePath) {
+                alert("Por favor selecciona un archivo .xlsx desde tu computadora en el Paso 1.");
                 return;
             }
 
@@ -819,53 +835,72 @@
             document.querySelectorAll('.op-checkbox:checked').forEach(cb => activeOps.push(cb.value));
 
             if (activeOps.length === 0) {
-                alert("Debes seleccionar al menos un operador activo.");
+                alert("Debes seleccionar al menos un operador activo en el Paso 2.");
                 return;
             }
 
-            const criteria = document.querySelector('input[name="criteria"]:checked').value;
+            const criteria = document.querySelector('input[name="criteria"]:checked')?.value || 'EQUILIBRADO';
 
-            if (!confirm(`¿Confirmas cruzar este archivo y asignar los casos entre ${activeOps.length} operadores activos bajo el criterio "${criteria}"?`)) return;
+            const fileNameMsg = uploadedFile ? uploadedFile.name : filePath;
+            if (!confirm(`¿Confirmas cruzar el archivo "${fileNameMsg}" y asignar los casos entre ${activeOps.length} operadores activos bajo el criterio "${criteria}"?`)) return;
 
             const btn = document.getElementById('btn-cross-assign');
             btn.disabled = true;
-            btn.innerText = "Cruzando datos y asignando casos...";
+            btn.innerText = "⏳ Cruzando datos y asignando casos... por favor espera";
 
-            try {
-                const res = await fetch('/api/supervisor/cross_and_assign', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        file_path: filePath,
+            const sendPayload = async (payload) => {
+                try {
+                    const res = await fetch('/api/supervisor/cross_and_assign', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    btn.disabled = false;
+                    btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> CRUZAR ARCHIVO Y ASIGNAR CASOS A OPERADORES ACTIVOS`;
+
+                    const resBox = document.getElementById('assign-result-box');
+                    if (data.success) {
+                        resBox.className = "mt-4 p-4 rounded-xl border bg-emerald-950/40 border-emerald-500/60 text-emerald-200 text-xs";
+                        resBox.innerHTML = `
+                            <h4 class="font-bold text-sm text-emerald-400 mb-1">¡Cruce y Asignación Completada con Éxito!</h4>
+                            <p>• <strong>${data.total_asignados}</strong> casos distribuidos entre <strong>${data.operadores_activos}</strong> operadores activos.</p>
+                            <p>• Casos Nuevos detectados: <strong>${data.nuevos_detectados}</strong></p>
+                            <p>• Casos No Atendidos previos para reintento: <strong>${data.reintentos_no_atendidos}</strong></p>
+                            <p>• Criterio aplicado: <strong>${data.criterio}</strong></p>
+                        `;
+                        resBox.classList.remove('hidden');
+                        loadDashboardData();
+                        updateConsecutivosBadge();
+                    } else {
+                        resBox.className = "mt-4 p-4 rounded-xl border bg-rose-950/40 border-rose-500/60 text-rose-200 text-xs";
+                        resBox.innerHTML = `<strong>Error:</strong> ${data.error || 'Desconocido'}`;
+                        resBox.classList.remove('hidden');
+                    }
+                } catch (e) {
+                    btn.disabled = false;
+                    btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> CRUZAR ARCHIVO Y ASIGNAR CASOS A OPERADORES ACTIVOS`;
+                    alert("Error ejecutando cruce: " + e);
+                }
+            };
+
+            if (uploadedFile) {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    await sendPayload({
+                        file_base64: e.target.result,
+                        file_name: uploadedFile.name,
                         active_operator_ids: activeOps,
                         criteria: criteria
-                    })
+                    });
+                };
+                reader.readAsDataURL(uploadedFile);
+            } else {
+                await sendPayload({
+                    file_path: filePath,
+                    active_operator_ids: activeOps,
+                    criteria: criteria
                 });
-                const data = await res.json();
-                btn.disabled = false;
-                btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> CRUZAR ARCHIVO Y ASIGNAR CASOS A OPERADORES ACTIVOS`;
-
-                const resBox = document.getElementById('assign-result-box');
-                if (data.success) {
-                    resBox.className = "mt-4 p-4 rounded-xl border bg-emerald-950/40 border-emerald-500/60 text-emerald-200 text-xs";
-                    resBox.innerHTML = `
-                        <h4 class="font-bold text-sm text-emerald-400 mb-1">¡Cruce y Asignación Completada con Éxito!</h4>
-                        <p>• <strong>${data.total_asignados}</strong> casos distribuidos entre <strong>${data.operadores_activos}</strong> operadores activos.</p>
-                        <p>• Casos Nuevos detectados: <strong>${data.nuevos_detectados}</strong></p>
-                        <p>• Casos No Atendidos previos para reintento: <strong>${data.reintentos_no_atendidos}</strong></p>
-                        <p>• Criterio aplicado: <strong>${data.criterio}</strong></p>
-                    `;
-                    resBox.classList.remove('hidden');
-                    loadDashboardData();
-            updateConsecutivosBadge();
-                } else {
-                    resBox.className = "mt-4 p-4 rounded-xl border bg-rose-950/40 border-rose-500/60 text-rose-200 text-xs";
-                    resBox.innerHTML = `<strong>Error:</strong> ${data.error || 'Desconocido'}`;
-                    resBox.classList.remove('hidden');
-                }
-            } catch (e) {
-                btn.disabled = false;
-                alert("Error ejecutando cruce: " + e);
             }
         }
 
