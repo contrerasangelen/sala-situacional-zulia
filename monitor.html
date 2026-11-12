@@ -468,18 +468,21 @@
                 </div>
             </div>
 
-            <!-- PARROQUIAS CON MÁS AVERÍAS (VISIBLE EN LA MISMA PANTALLA) -->
-            <div class="glass-card rounded-2xl p-2.5 flex-grow flex flex-col justify-between overflow-hidden">
-                <div class="flex items-center justify-between pb-1.5 border-b border-slate-700/60 shrink-0">
-                    <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                        <span>Parroquias Críticas TX</span>
+            <!-- AUDITORÍA DE CALIDAD: DESESTIMACIONES NO PROCEDENTES -->
+            <div class="glass-card rounded-2xl p-2.5 flex-grow flex flex-col justify-between overflow-hidden border border-rose-900/40">
+                <div class="flex items-center justify-between pb-1.5 border-b border-rose-500/30 shrink-0">
+                    <h3 class="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                        <span>Auditoría de Calidad: Desestimados</span>
                     </h3>
-                    <span class="text-[9px] text-blue-400 font-bold uppercase tracking-wider">Avance</span>
+                    <span class="text-[9px] text-rose-400 font-bold uppercase tracking-wider">Reincidencia</span>
                 </div>
                 
-                <div id="parish-list" class="space-y-1.5 overflow-y-auto pr-0.5 scrollbar-hidden flex-grow my-1">
-                    <!-- Se llena dinámicamente con las barras de fluido por parroquia -->
+                <div id="reincidencia-list" class="space-y-1.5 overflow-y-auto pr-0.5 scrollbar-hidden flex-grow my-1">
+                    <div class="h-24 flex flex-col items-center justify-center p-3 text-center rounded-lg bg-emerald-950/20 border border-emerald-500/20">
+                        <span class="text-emerald-400 font-bold text-xs mb-1">✓ Control Óptimo</span>
+                        <span class="text-[10px] text-slate-400">Sin desestimaciones no procedentes registradas.</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -831,7 +834,21 @@
                 const topBorderColor = isPrincipal
                     ? (op.is_active ? "border-t-emerald-400" : "border-t-cyan-400")
                     : (op.is_active ? "border-t-emerald-400" : "border-t-amber-400");
-                card.className = `bg-slate-900/95 hover:bg-slate-800/90 rounded-xl p-1.5 sm:p-2 border border-slate-600/90 border-t-[3px] ${topBorderColor} flex flex-col justify-between transition-all duration-200 shadow-md shadow-black/40 hover:border-cyan-300 h-full overflow-hidden`;
+                const pctAv = parseFloat(op.pct_avance) || 0;
+                const audCnt = parseInt(op.auditados) || 0;
+                let semaforoBg = "bg-slate-900/95 border-slate-600/90";
+                if (audCnt === 0 || pctAv === 0) {
+                    semaforoBg = "bg-slate-900/50 border-slate-800 opacity-50";
+                } else if (pctAv > 75) {
+                    semaforoBg = "bg-emerald-900/35 border-emerald-400/70";
+                } else if (pctAv >= 50) {
+                    semaforoBg = "bg-amber-900/45 border-amber-400/80";
+                } else if (pctAv >= 30) {
+                    semaforoBg = "bg-yellow-900/25 border-yellow-300/60";
+                } else {
+                    semaforoBg = "bg-rose-950/55 border-rose-500/70";
+                }
+                card.className = `${semaforoBg} hover:brightness-110 rounded-xl p-1.5 sm:p-2 border border-t-[3px] ${topBorderColor} flex flex-col justify-between transition-all duration-200 shadow-md shadow-black/40 hover:border-cyan-300 h-full overflow-hidden`;
                 
                 const dotClass = op.is_active ? "bg-emerald-400 pulse-dot" : "bg-slate-600";
                 const statusText = op.is_active ? "Llamando" : "Pausa";
@@ -891,6 +908,48 @@
         }
 
         // Cargar Parroquias Críticas con barras de fluido individuales
+        async function loadReincidenciaStats() {
+            try {
+                const res = await fetch('/api/reincidencia_desestimados_stats');
+                const stats = await res.json();
+                const list = document.getElementById('reincidencia-list');
+                if (!list) return;
+
+                if (!stats || stats.length === 0) {
+                    list.innerHTML = `
+                        <div class="h-24 flex flex-col items-center justify-center p-3 text-center rounded-lg bg-emerald-950/20 border border-emerald-500/20">
+                            <span class="text-emerald-400 font-bold text-xs mb-1">✓ Control Óptimo</span>
+                            <span class="text-[10px] text-slate-400">Sin desestimaciones no procedentes registradas.</span>
+                        </div>
+                    `;
+                    return;
+                }
+
+                list.innerHTML = '';
+                stats.forEach((s, idx) => {
+                    const maxVal = stats[0].total_improcedentes || 1;
+                    const pct = Math.min((s.total_improcedentes / maxVal) * 100, 100);
+
+                    const item = document.createElement('div');
+                    item.className = "p-1.5 rounded-lg bg-slate-800/80 border border-rose-900/40 flex flex-col gap-1";
+                    item.innerHTML = `
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="font-extrabold text-white text-[11px] truncate">${idx+1}. ${s.operador_nombre}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-950 border border-rose-500/60 text-rose-300 font-mono">
+                                ${s.total_improcedentes} ${s.total_improcedentes === 1 ? 'caso' : 'casos'}
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden flex border border-slate-800">
+                            <div class="bg-gradient-to-r from-amber-500 to-rose-500 h-1.5 transition-all duration-500" style="width: ${pct}%;"></div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            } catch (err) {
+                console.error("Error cargando reincidencia:", err);
+            }
+        }
+
         async function loadParishes() {
             try {
                 const p = (txScaleMode === 'shift') ? 'diario' : 'historico';

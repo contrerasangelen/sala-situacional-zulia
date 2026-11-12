@@ -54,6 +54,14 @@ def init_db_schema():
 
         if "operador_nombre" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN operador_nombre TEXT")
+        if "desestimado_verificado" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN desestimado_verificado INTEGER DEFAULT 0")
+        if "desestimado_improcedente_flag" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN desestimado_improcedente_flag INTEGER DEFAULT 0")
+        if "desestimado_operador_origen" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN desestimado_operador_origen INTEGER DEFAULT NULL")
+        if "operador_validador_id" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN operador_validador_id INTEGER DEFAULT NULL")
 
         # Column 'grupo' in operadores
         op_cols = [r[1] for r in cur.execute("PRAGMA table_info(operadores)").fetchall()]
@@ -289,6 +297,16 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             })
 
         # 2. Resumen de Operadores por Período
+        elif path == "/api/operator_ping":
+            op_id = query.get("operator_id", [None])[0]
+            if op_id:
+                now_vet = get_vet_time().strftime("%Y-%m-%d %H:%M:%S")
+                cur.execute("UPDATE operadores SET ultima_actividad = ? WHERE id = ?", (now_vet, op_id))
+                conn.commit()
+            conn.close()
+            self.send_json({"ok": True})
+            return
+
         elif path == "/api/operators_stats":
             sub_date = ""
             if date_filter_sql:
@@ -333,7 +351,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 if r["ultima_actividad"]:
                     try:
                         last_t = datetime.strptime(r["ultima_actividad"], "%Y-%m-%d %H:%M:%S")
-                        if (now - last_t).total_seconds() < 600:
+                        if abs((now.replace(tzinfo=None) - last_t).total_seconds()) < 300:
                             is_active = True
                     except Exception:
                         pass
@@ -424,7 +442,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 MAX(c.devuelto_flag) as has_devueltos,
                 SUM(CASE WHEN c.devuelto_flag = 1 THEN 1 ELSE 0 END) as devueltos_count,
                 MAX(CASE WHEN c.devuelto_flag = 1 THEN c.codigo_caso ELSE NULL END) as devuelto_codigo,
-                MAX(CASE WHEN c.devuelto_flag = 1 THEN c.devuelto_motivo ELSE NULL END) as devuelto_motivo
+                MAX(CASE WHEN c.devuelto_flag = 1 THEN c.devuelto_motivo ELSE NULL END) as devuelto_motivo,
+                GROUP_CONCAT(COALESCE(NULLIF(c.estatus_llamada, ''), 'PENDIENTE'), '|') as estatus_casos_lista
             FROM clientes cli
             JOIN casos c ON cli.id_llamada = c.id_llamada
             WHERE c.operador_id = ? AND (
@@ -436,8 +455,10 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             ORDER BY 
                 has_devueltos DESC,
                 (num_casos = auditados_en_grupo) ASC,
-                num_casos DESC,
+                (MAX(c.tipo_contacto) LIKE '%REASIGNADO%') DESC,
+                MAX(CASE WHEN DATE(c.actualizado_en) = DATE('now', '-4 hours') THEN 1 ELSE 0 END) DESC,
                 fecha_aviso DESC,
+                num_casos DESC,
                 cli.id_llamada
             """, (op_id,))
             clientes = [dict(r) for r in cur.fetchall()]
@@ -488,6 +509,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             WHERE (c.inconsistencia_flag = 1 OR c.estatus_llamada = 'RECATEGORIZAR')
               AND c.devuelto_flag = 0
               AND (c.inconsistencia_aprobada = 0 OR c.inconsistencia_aprobada IS NULL)
+              AND COALESCE(c.estatus_llamada, '') != 'RECATEGORIZADO (APROBADO)' 
             ORDER BY c.actualizado_en DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
@@ -620,6 +642,46 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(data_bytes)
             return
 
+        # 9.1 Cola de verificacion de casos desestimados (Control de Calidad)
+        elif path == "/api/desestimados_verificacion_queue":
+            cur.execute("""
+            SELECT 
+                c.id, c.codigo_caso, c.id_llamada, c.operador_id, o.nombre as operador_origen_nombre,
+                c.denunciante, c.cedula, c.telefono_1, c.telefono_2, c.municipio, c.parroquia, c.sector, c.direccion,
+                c.categoria_homologada, c.subcategoria, c.descripcion_reporte,
+                c.estatus_llamada, c.observaciones, c.fecha_contacto, c.actualizado_en
+            FROM casos c
+            LEFT JOIN operadores o ON c.operador_id = o.id
+            WHERE c.estatus_llamada = 'DESESTIMAR' 
+              AND (c.desestimado_verificado IS NULL OR c.desestimado_verificado = 0)
+              AND (c.desestimado_aprobado IS NULL OR c.desestimado_aprobado = 0)
+            ORDER BY c.actualizado_en DESC, c.id DESC
+            """)
+            casos = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            self.send_json(casos)
+            return
+
+        # 9.2 Estadisticas de reincidencia de desestimaciones no procedentes
+        elif path == "/api/reincidencia_desestimados_stats":
+            cur.execute("""
+            SELECT 
+                o.id as operador_id,
+                o.nombre as operador_nombre,
+                COUNT(c.id) as total_improcedentes,
+                MAX(c.actualizado_en) as ultimo_caso_fecha
+            FROM casos c
+            JOIN operadores o ON c.desestimado_operador_origen = o.id
+            WHERE c.desestimado_improcedente_flag = 1
+            GROUP BY o.id, o.nombre
+            ORDER BY total_improcedentes DESC, ultimo_caso_fecha DESC
+            LIMIT 7
+            """)
+            stats = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            self.send_json(stats)
+            return
+
         # 10. Buscador de casos
         elif path == "/api/search_case":
             term = query.get("q", [""])[0].strip()
@@ -721,13 +783,15 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             SELECT c.*, o.nombre as operador_nombre
             FROM casos c
             JOIN operadores o ON c.operador_id = o.id
-            WHERE c.estatus_llamada = 'RECATEGORIZAR' OR c.inconsistencia_flag = 1
-            ORDER BY c.municipio, c.parroquia
+            WHERE (c.estatus_llamada = 'RECATEGORIZAR' OR c.inconsistencia_flag = 1)
+              AND (c.inconsistencia_aprobada = 0 OR c.inconsistencia_aprobada IS NULL)
+              AND COALESCE(c.estatus_llamada, '') != 'RECATEGORIZADO (APROBADO)'
+            ORDER BY c.actualizado_en DESC, c.municipio, c.parroquia
             """)
             rows = cur.fetchall()
 
             headers = [
-                "CODIGO CASO", "OPERADOR QUE AUDITO", "CEDULA", "DENUNCIANTE", "TELEFONO",
+                "CODIGO CASO", "FECHA ENVIO / AUDITORIA", "DIAS EN BANDEJA", "OPERADOR QUE AUDITO", "CEDULA", "DENUNCIANTE", "TELEFONO",
                 "MUNICIPIO", "PARROQUIA", "DIRECCION", "POSTE", "CATEGORIA ORIGINAL",
                 "ESTATUS MARCADO", "¿PERSISTE?", "¿REQUIERE CAMPO?", "OBSERVACIONES / TESTIMONIO",
                 "MOTIVO INCONSISTENCIA DETECTADA"
@@ -742,9 +806,18 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 c.fill = fill_head
                 c.alignment = Alignment(horizontal="center", vertical="center")
 
+            hoy_dt = get_vet_time().date()
             for r in rows:
+                f_env = r["fecha_contacto"] or (str(r["actualizado_en"])[:10] if r["actualizado_en"] else "")
+                dias_b = ""
+                if f_env and len(f_env) >= 10:
+                    try:
+                        d_env = datetime.strptime(f_env[:10], "%Y-%m-%d").date()
+                        dias_b = max(0, (hoy_dt - d_env).days)
+                    except Exception:
+                        pass
                 ws.append([
-                    r["codigo_caso"], r["operador_nombre"], r["cedula"], r["denunciante"], r["telefono_1"],
+                    r["codigo_caso"], f_env, dias_b, r["operador_nombre"], r["cedula"], r["denunciante"], r["telefono_1"],
                     r["municipio"], r["parroquia"], r["direccion"], r["poste_confirmado"] or r["poste_detectado"],
                     r["categoria_homologada"], r["estatus_llamada"], r["persiste"], r["requiere_campo"],
                     r["observaciones"], r["inconsistencia_motivo"]
@@ -865,11 +938,71 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
         conn = get_db()
         cur = conn.cursor()
 
+        # Verificacion de casos desestimados (Control de Calidad)
+        if path == "/api/desestimado_verificar":
+            caso_id = data.get("caso_id")
+            accion = data.get("accion", "CONFIRMAR_DESESTIMADO") # CONFIRMAR_DESESTIMADO o GESTIONAR_VALIDO
+            validador_id = int(data.get("operador_validador_id", 1))
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            if not caso_id:
+                conn.close()
+                self.send_json({"error": "Falta caso_id"}, 400)
+                return
+
+            c_row = cur.execute("SELECT operador_id, codigo_caso, denunciante FROM casos WHERE id = ?", (caso_id,)).fetchone()
+            if not c_row:
+                conn.close()
+                self.send_json({"error": "Caso no encontrado"}, 404)
+                return
+
+            orig_op_id = c_row[0]
+
+            if accion == "CONFIRMAR_DESESTIMADO":
+                cur.execute("""
+                UPDATE casos SET 
+                    desestimado_verificado = 1,
+                    actualizado_en = ?
+                WHERE id = ?
+                """, (now_str, caso_id))
+                detalle = f"Auditoria confirmo desestimacion del caso #{caso_id}. Pasa a supervisor."
+            else:
+                # GESTIONAR_VALIDO: El cliente contesto y se realizo la gestion real
+                nuevo_estatus = data.get("estatus_llamada", "ATENDIDO")
+                persiste = data.get("persiste", "NO")
+                req_campo = data.get("requiere_campo", "NO")
+                obs_val = data.get("observaciones", "Gestion directa por verificacion")
+                full_obs = f"[VERIFICADO EN SALA]: {obs_val}"
+                fecha_cont = get_vet_time().strftime("%Y-%m-%d")
+
+                cur.execute("""
+                UPDATE casos SET 
+                    estatus_llamada = ?,
+                    persiste = ?,
+                    requiere_campo = ?,
+                    observaciones = ?,
+                    estado_auditoria = 'GESTIONADO',
+                    fecha_contacto = ?,
+                    desestimado_improcedente_flag = 1,
+                    desestimado_operador_origen = ?,
+                    operador_validador_id = ?,
+                    actualizado_en = ?
+                WHERE id = ?
+                """, (nuevo_estatus, persiste, req_campo, full_obs, fecha_cont, orig_op_id, validador_id, now_str, caso_id))
+                detalle = f"Auditoria verifico caso #{caso_id}: Se logro comunicacion real ({nuevo_estatus}). Marcada improcedencia a Op #{orig_op_id}."
+
+            # Registrar en logs institucionales
+            cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (?, 'VERIFICACION_CALIDAD', ?)", (validador_id, detalle))
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True, "status": "ok", "detalle": detalle})
+            return
+
         # Guardar llamada
         if path == "/api/save_call":
             op_id = data.get("operador_id")
             cases_updates = data.get("cases", [])
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            now_str = get_vet_time().strftime("%Y-%m-%d %H:%M:%S")
 
             if not op_id or not cases_updates:
                 conn.close()
@@ -1056,6 +1189,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 devuelto_flag = 0, 
                 inconsistencia_aprobada = 1,
                 inconsistencia_motivo = NULL,
+                estatus_llamada = CASE WHEN estatus_llamada = 'RECATEGORIZAR' THEN 'RECATEGORIZADO (APROBADO)' ELSE estatus_llamada END,
                 estado_auditoria = 'GESTIONADO'
             WHERE id = ?
             """, (caso_id,))
@@ -1087,8 +1221,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 cur.execute(f"SELECT COUNT(*) FROM casos WHERE id_llamada IN ({placeholders}) AND estado_auditoria = 'PENDIENTE'", clientes_to_move)
                 casos_movidos = cur.fetchone()[0]
 
-                cur.execute(f"UPDATE clientes SET operador_id = ? WHERE id_llamada IN ({placeholders})", [to_op] + clientes_to_move)
-                cur.execute(f"UPDATE casos SET operador_id = ?, operador_nombre = ? WHERE id_llamada IN ({placeholders}) AND estado_auditoria = 'PENDIENTE'", [to_op, to_name] + clientes_to_move)
+                cur.execute(f"UPDATE clientes SET operador_id = ?, tipo_contacto = 'CASO REASIGNADO' WHERE id_llamada IN ({placeholders})", [to_op] + clientes_to_move)
+                cur.execute(f"UPDATE casos SET operador_id = ?, operador_nombre = ?, tipo_contacto = 'CASO REASIGNADO' WHERE id_llamada IN ({placeholders}) AND estado_auditoria = 'PENDIENTE'", [to_op, to_name] + clientes_to_move)
                 cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'REASIGNACION', ?)",
                             (f"Supervisor reasignó {len(clientes_to_move)} clientes ({casos_movidos} casos) del Op #{from_op} al Op #{to_op} ({to_name})",))
                 conn.commit()
@@ -1139,12 +1273,47 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
             try:
                 import io
-                wb_new = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
-                # Seleccionar primera hoja o 'Hoja1' o 'Casos Pendientes'
-                sname = wb_new.sheetnames[0]
-                ws = wb_new[sname]
-                it = ws.iter_rows(values_only=True)
-                raw_headers = [str(c).strip().upper() if c else "" for c in next(it)]
+                # MOTOR DE LECTURA ULTRA-ROBUSTO MULTI-FORMATO
+                rows_data = []
+                wb_new = None
+
+                # 1. Intento con openpyxl read_only=False (soluciona error de 'could not read stylesheet from None')
+                try:
+                    wb_new = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=False, data_only=True)
+                    ws = wb_new[wb_new.sheetnames[0]]
+                    rows_data = list(ws.iter_rows(values_only=True))
+                except Exception:
+                    # 2. Intento con openpyxl read_only=True
+                    try:
+                        wb_new = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
+                        ws = wb_new[wb_new.sheetnames[0]]
+                        rows_data = list(ws.iter_rows(values_only=True))
+                    except Exception:
+                        pass
+
+                # 3. Fallback con pandas (para archivos .xls, .xlsx de VenApp/Pegasus)
+                if not rows_data:
+                    try:
+                        import pandas as pd
+                        df_temp = pd.read_excel(io.BytesIO(raw_bytes))
+                        rows_data = [list(df_temp.columns)] + df_temp.values.tolist()
+                    except Exception:
+                        try:
+                            import pandas as pd
+                            dfs = pd.read_html(io.BytesIO(raw_bytes))
+                            if dfs:
+                                df_temp = dfs[0]
+                                rows_data = [list(df_temp.columns)] + df_temp.values.tolist()
+                        except Exception:
+                            pass
+
+                if not rows_data or len(rows_data) < 2:
+                    conn.close()
+                    self.send_json({"error": "No se pudo leer el archivo Excel. Verifica que contenga filas con datos."}, 400)
+                    return
+
+                raw_headers = [str(c).strip().upper() if c else "" for c in rows_data[0]]
+                it = rows_data[1:]
 
                 # Mapear columnas dinámicamente
                 def get_col_idx(names):
@@ -1167,7 +1336,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 idx_fgen = get_col_idx(["FECHA GENERADO", "FECHA_GENERADO", "FECHA"])
 
                 if idx_code == -1:
-                    wb_new.close()
+                    if wb_new and hasattr(wb_new, 'close'): wb_new.close()
                     conn.close()
                     self.send_json({"error": "No se encontró la columna de Código de Caso en el archivo."}, 400)
                     return
@@ -1217,11 +1386,11 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
                     tipo_c = "PENDIENTE (PRIMER CONTACTO)" if is_nuevo else "REINTENTO (SIN COMUNICACION PREVIA)"
 
-                    # Clave de cliente para mantener casos agrupados
-                    if ced_val and ced_val not in ["V0", "0", "V", "SIN CEDULA"]:
-                        ckey = ("CED", ced_val)
-                    elif len(t1_val) >= 10:
-                        ckey = ("TEL", t1_val)
+                    # Clave de cliente: SOLO agrupar si es el MISMO interlocutor (evita mezclar denunciantes distintos)
+                    if ced_val and ced_val not in ["V0", "0", "V", "SIN CEDULA", "NONE"]:
+                        ckey = ("CED", ced_val, den_val)
+                    elif len(t1_val) >= 10 and den_val:
+                        ckey = ("TEL_DEN", t1_val, den_val)
                     elif den_val:
                         ckey = ("DEN", den_val)
                     else:
@@ -1247,7 +1416,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                         "is_tx": ("TX" in cat_val or "TRANSFORMADOR" in cat_val)
                     })
 
-                wb_new.close()
+                if wb_new and hasattr(wb_new, 'close'): wb_new.close()
 
                 # Agrupar por denunciante
                 groups = defaultdict(list)
@@ -1300,8 +1469,9 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                     for itm in assigned_items:
                         op_client_groups[itm["ckey"]].append(itm)
 
+                    batch_ts = get_vet_time().strftime("%m%d%H%M")
                     for cli_idx, (ckey, itms) in enumerate(op_client_groups.items(), 1):
-                        id_llamada_new = f"CALL-OP{op_id:02d}-{cli_idx:04d}"
+                        id_llamada_new = f"CALL-OP{op_id:02d}-{batch_ts}-{cli_idx:04d}"
                         first_it = itms[0]
                         tot_in_g = len(itms)
 
