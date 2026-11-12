@@ -8,7 +8,11 @@ import os
 import glob
 import re
 import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+def get_vet_time():
+    """Retorna la fecha y hora oficial de Venezuela (UTC-4) para servidores en la nube como Render."""
+    return datetime.now(timezone.utc) - timedelta(hours=4)
 from collections import defaultdict
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -207,7 +211,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
         f_desde = query.get("desde", [""])[0]
         f_hasta = query.get("hasta", [""])[0]
 
-        now = datetime.now()
+        now = get_vet_time()
         date_filter_sql = ""
         date_params = []
 
@@ -301,8 +305,8 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             SELECT 
                 o.id, o.nombre, o.pestaña, o.ultima_actividad, o.activo,
                 COALESCE(o.grupo, CASE WHEN o.id <= 15 THEN 'PRINCIPAL' ELSE 'APOYO' END) as grupo,
-                COUNT(CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', 'localtime')) THEN 1 END) as tot_casos,
-                COUNT(DISTINCT CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', 'localtime')) THEN c.id_llamada END) as tot_clientes,
+                COUNT(CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', '-4 hours')) THEN 1 END) as tot_casos,
+                COUNT(DISTINCT CASE WHEN c.estado_auditoria = 'PENDIENTE' OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', '-4 hours')) THEN c.id_llamada END) as tot_clientes,
                 SUM(CASE WHEN c.estatus_llamada IS NOT NULL AND c.estatus_llamada != '' {sub_date} THEN 1 ELSE 0 END) as auditados,
                 SUM(CASE WHEN c.estatus_llamada IN ('ATENDIDO', 'ATENDIDO POR TERCEROS') {sub_date} THEN 1 ELSE 0 END) as atendidos,
                 SUM(CASE WHEN c.estatus_llamada IN ('SIN COMUNICACIÓN', 'SIN INFORMACION') {sub_date} THEN 1 ELSE 0 END) as sin_com,
@@ -426,7 +430,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             WHERE c.operador_id = ? AND (
                 c.devuelto_flag = 1
                 OR c.estado_auditoria IN ('PENDIENTE', 'DEVUELTO_CORRECCION')
-                OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', 'localtime'))
+                OR (c.estado_auditoria = 'GESTIONADO' AND DATE(c.actualizado_en) = DATE('now', '-4 hours'))
             )
             GROUP BY cli.id_llamada
             ORDER BY 
@@ -456,6 +460,24 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             casos = [dict(r) for r in cur.fetchall()]
             conn.close()
             self.send_json(casos)
+
+        # Lista detallada de operadores para el módulo de Reasignación Rápida
+        elif path == "/api/supervisor/operators_reassign_info":
+            cur.execute("""
+            SELECT 
+                o.id, 
+                o.nombre,
+                COALESCE(o.grupo, CASE WHEN o.id <= 15 THEN 'PRINCIPAL' ELSE 'APOYO' END) as grupo,
+                COUNT(DISTINCT CASE WHEN (c.estatus_llamada IS NULL OR c.estatus_llamada = '') THEN c.id_llamada END) as pendientes_llamadas,
+                COUNT(CASE WHEN (c.estatus_llamada IS NULL OR c.estatus_llamada = '') THEN 1 END) as pendientes_casos
+            FROM operadores o
+            LEFT JOIN casos c ON o.id = c.operador_id
+            GROUP BY o.id, o.nombre
+            ORDER BY o.id
+            """)
+            ops = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            self.send_json(ops)
 
         # 9. Inconsistencias para supervisor
         elif path == "/api/supervisor/inconsistencias":
@@ -1043,29 +1065,42 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
         # Reasignación básica manual
         elif path == "/api/supervisor/reasignar":
-            from_op = data.get("from_operador_id")
-            to_op = data.get("to_operador_id")
+            from_op = int(data.get("from_operador_id", 0))
+            to_op = int(data.get("to_operador_id", 0))
             cant_clientes = int(data.get("cantidad_clientes", 10))
 
             cur.execute("""
-            SELECT DISTINCT cli.id_llamada
-            FROM clientes cli
-            JOIN casos c ON cli.id_llamada = c.id_llamada
-            WHERE c.operador_id = ? AND (c.estatus_llamada IS NULL OR c.estatus_llamada = '')
+            SELECT DISTINCT id_llamada
+            FROM casos
+            WHERE operador_id = ? AND estado_auditoria = 'PENDIENTE'
             LIMIT ?
             """, (from_op, cant_clientes))
-            clientes_to_move = [r[0] for r in cur.fetchall()]
+            clientes_to_move = [r[0] for r in cur.fetchall() if r[0]]
 
+            casos_movidos = 0
             if clientes_to_move:
+                cur.execute("SELECT nombre FROM operadores WHERE id = ?", (to_op,))
+                to_row = cur.fetchone()
+                to_name = to_row[0] if to_row else f"OPERADOR {to_op}"
+
                 placeholders = ",".join("?" for _ in clientes_to_move)
+                cur.execute(f"SELECT COUNT(*) FROM casos WHERE id_llamada IN ({placeholders}) AND estado_auditoria = 'PENDIENTE'", clientes_to_move)
+                casos_movidos = cur.fetchone()[0]
+
                 cur.execute(f"UPDATE clientes SET operador_id = ? WHERE id_llamada IN ({placeholders})", [to_op] + clientes_to_move)
-                cur.execute(f"UPDATE casos SET operador_id = ? WHERE id_llamada IN ({placeholders})", [to_op] + clientes_to_move)
+                cur.execute(f"UPDATE casos SET operador_id = ?, operador_nombre = ? WHERE id_llamada IN ({placeholders}) AND estado_auditoria = 'PENDIENTE'", [to_op, to_name] + clientes_to_move)
                 cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'REASIGNACION', ?)",
-                            (f"Supervisor reasignó {len(clientes_to_move)} clientes del Op #{from_op} al Op #{to_op}",))
+                            (f"Supervisor reasignó {len(clientes_to_move)} clientes ({casos_movidos} casos) del Op #{from_op} al Op #{to_op} ({to_name})",))
                 conn.commit()
 
             conn.close()
-            self.send_json({"success": True, "reassigned_clients": len(clientes_to_move)})
+            self.send_json({
+                "status": "ok",
+                "success": True,
+                "clientes_movidos": len(clientes_to_move),
+                "reassigned_clients": len(clientes_to_move),
+                "casos_movidos": casos_movidos
+            })
 
         # MOTOR DE INGESTA, CRUCE Y ASIGNACIÓN INTELIGENTE CON MÚLTIPLES CRITERIOS
         elif path == "/api/supervisor/cross_and_assign":
