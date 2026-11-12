@@ -67,6 +67,9 @@
                     <button onclick="setFilter('devueltos')" id="filter-devueltos" class="py-1 px-2 text-[11px] font-bold rounded bg-slate-800 text-rose-400 hover:bg-slate-700">
                         🔔 <span id="cnt-devueltos" class="text-[10px] opacity-80">(0)</span>
                     </button>
+                    <button onclick="setFilter('desestimados_revision')" id="filter-desestimados-revision" class="hidden py-1 px-2 text-[11px] font-bold rounded bg-purple-950/80 text-purple-300 border border-purple-600/50 hover:bg-purple-900" title="Verificación de Desestimados">
+                        🛡️ <span id="cnt-desestimados-revision" class="text-[10px] bg-purple-600 text-white rounded-full px-1">(0)</span>
+                    </button>
                 </div>
             </div>
 
@@ -95,6 +98,7 @@
                 <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 lg:p-6 shadow-xl">
                     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                         <div class="flex items-center gap-2">
+                            <span id="client-badge-reasignado" class="hidden px-2.5 py-1 rounded-md text-xs font-black bg-purple-900 text-purple-200 border border-purple-500">CASO REASIGNADO</span>
                             <span id="client-badge-reintento" class="px-2.5 py-1 rounded-md text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">REINTENTO</span>
                             <span id="client-id" class="text-xs font-mono font-bold text-blue-400">CALL-OP01-0001</span>
                             <span id="client-total-casos" class="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 text-slate-300">2 Casos</span>
@@ -285,10 +289,31 @@
             loadOperatorQueue();
         }
 
+
+        // Latido automático cada 30s para mantenerse En Línea en el Monitor de la Sala
+        function sendOperatorPing() {
+            if (!currentOperatorId) return;
+            fetch(`/api/operator_ping?operator_id=${currentOperatorId}`).catch(() => {});
+        }
+        setInterval(sendOperatorPing, 30000);
+
+        let desestimadosQueue = [];
+
         // Cargar cola de clientes del operador
         async function loadOperatorQueue() {
             if (!currentOperatorId) return;
             try {
+                // Mostrar pestaña de verificacion si es Op 1
+                const btnQA = document.getElementById('filter-desestimados-revision');
+                if (currentOperatorId == "1" || currentOperatorId == 1) {
+                    btnQA.classList.remove('hidden');
+                    loadDesestimadosRevisionCount();
+                } else {
+                    btnQA.classList.add('hidden');
+                    if (currentFilter === 'desestimados_revision') currentFilter = 'todos';
+                }
+
+                sendOperatorPing();
                 const res = await fetch(`/api/operator_queue?operator_id=${currentOperatorId}&_t=${Date.now()}`);
                 currentQueue = await res.json();
                 renderQueue();
@@ -296,6 +321,16 @@
             } catch (e) {
                 console.error("Error cargando cola:", e);
             }
+        }
+
+        async function loadDesestimadosRevisionCount() {
+            try {
+                const res = await fetch('/api/desestimados_verificacion_queue');
+                desestimadosQueue = await res.json();
+                const cnt = document.getElementById('cnt-desestimados-revision');
+                if (cnt) cnt.innerText = `(${desestimadosQueue.length})`;
+                if (currentFilter === 'desestimados_revision') renderDesestimadosRevisionQueue();
+            } catch(e) {}
         }
 
         function setFilter(filter) {
@@ -351,6 +386,7 @@
 
             filtered.forEach((cli, idx) => {
                 const isCompleted = (cli.num_casos === cli.auditados_en_grupo);
+                const isReasignado = cli.tipo_contacto && cli.tipo_contacto.includes('REASIGNADO');
                 const isReintento = cli.tipo_contacto && cli.tipo_contacto.includes('REINTENTO');
                 const isDevuelto = cli.has_devueltos == 1;
 
@@ -368,16 +404,42 @@
                         : 'DEVUELTO';
                     badgeHtml = `<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white animate-pulse">⚠️ ${devTxt}</span>`;
                 }
+                else if (isReasignado) badgeHtml = '<span class="px-2 py-0.5 rounded text-[10px] font-black bg-purple-900 border border-purple-500 text-purple-200">CASO REASIGNADO</span>';
                 else if (isReintento) badgeHtml = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">REINTENTO</span>';
                 else badgeHtml = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300">NUEVO</span>';
 
-                const checkHtml = isCompleted ? '✅' : '⏳';
+                
+                let checkHtml = '⏳';
+                let statusPillHtml = '';
+                if (cli.estatus_casos_lista) {
+                    const estArr = cli.estatus_casos_lista.split('|');
+                    const getCheck = (st) => {
+                        const s = (st || '').toUpperCase();
+                        if (s.includes('ATENDIDO')) return '<span title="Atendido" class="text-emerald-400 font-black">✔</span>';
+                        if (s.includes('SIN COMUNIC') || s.includes('SIN INFORM')) return '<span title="Sin Comunicación" class="text-amber-400 font-black">✔</span>';
+                        if (s.includes('POR ATENDER') || s.includes('PICA')) return '<span title="Por Atender" class="text-cyan-400 font-black">✔</span>';
+                        if (s.includes('RECATEGOR')) return '<span title="Recategorizar" class="text-purple-400 font-black">✔</span>';
+                        if (s.includes('DESESTIMAR')) return '<span title="Desestimar" class="text-rose-400 font-black">✔</span>';
+                        return '<span title="Pendiente" class="text-slate-500">⏳</span>';
+                    };
+                    if (isCompleted) {
+                        checkHtml = estArr.map(getCheck).join(' ');
+                        const uniqueSt = [...new Set(estArr.filter(x => x && x !== 'PENDIENTE'))];
+                        if (uniqueSt.length > 0) {
+                            statusPillHtml = `<div class="text-[10px] font-bold text-slate-300 mt-0.5 truncate">Resultado: <span class="text-emerald-300">${uniqueSt.join(' / ')}</span></div>`;
+                        }
+                    } else if (cli.auditados_en_grupo > 0) {
+                        checkHtml = estArr.map(getCheck).join(' ');
+                    }
+                }
+
 
                 card.innerHTML = `
                     <div class="flex items-center justify-between text-xs">
-                        <span class="font-bold text-white truncate max-w-[180px]">${cli.denunciante}</span>
-                        <div class="flex items-center gap-1">${badgeHtml} <span>${checkHtml}</span></div>
+                        <span class="font-bold text-white truncate max-w-[165px]">${cli.denunciante}</span>
+                        <div class="flex items-center gap-1">${badgeHtml} <span class="tracking-tighter">${checkHtml}</span></div>
                     </div>
+                    ${statusPillHtml}
                     ${isDevuelto && cli.devuelto_codigo ? `
                     <div class="bg-rose-900/50 border border-rose-500/60 rounded-lg p-1.5 text-[11px] flex flex-col gap-0.5 my-0.5">
                         <div class="flex items-center justify-between text-rose-200 font-bold">
@@ -796,6 +858,103 @@
 
         function skipClient() {
             advanceToNextPending();
+        }
+
+        // Renderizar cola de casos para desestimar (Operador 1)
+        function renderDesestimadosRevisionQueue() {
+            const cont = document.getElementById('queue-container');
+            cont.innerHTML = '';
+
+            if (desestimadosQueue.length === 0) {
+                cont.innerHTML = '<div class="p-8 text-center text-xs text-emerald-400 font-bold">✓ No hay casos pendientes por verificar desestimación.</div>';
+                return;
+            }
+
+            desestimadosQueue.forEach((c, idx) => {
+                const card = document.createElement('div');
+                card.className = "p-3 rounded-xl border border-purple-500/40 bg-purple-950/20 hover:bg-purple-950/40 transition cursor-pointer flex flex-col gap-1.5";
+                card.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-black text-purple-300 font-mono">${c.codigo_caso}</span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-black bg-purple-900 border border-purple-500 text-purple-200">DESESTIMAR</span>
+                    </div>
+                    <div class="text-xs font-bold text-slate-100">${c.denunciante || 'SIN NOMBRE'}</div>
+                    <div class="text-[11px] text-slate-400">📞 ${c.telefono_1 || 'No indicado'}</div>
+                    <div class="text-[10px] text-purple-300 font-medium">Operador Origen: <strong class="text-purple-200">${c.operador_origen_nombre || 'OP #' + c.operador_id}</strong></div>
+                    <div class="text-[10px] text-slate-400 italic bg-slate-900/60 p-1.5 rounded border border-slate-800">"${c.observaciones || 'Sin motivo'}"</div>
+                    <div class="flex gap-1.5 mt-2 pt-1.5 border-t border-purple-900/40">
+                        <button onclick="confirmarDesestimacionModal(${c.id})" class="flex-1 py-1 rounded text-[10px] font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">
+                            Confirmar Desestimado
+                        </button>
+                        <button onclick="gestionarValidoModal(${c.id})" class="flex-1 py-1 rounded text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-500">
+                            ✓ Cliente Contactado
+                        </button>
+                    </div>
+                `;
+                cont.appendChild(card);
+            });
+        }
+
+        async function confirmarDesestimacionModal(casoId) {
+            if (!confirm("¿Confirmas que verificaste y este caso REALMENTE DEBE DESESTIMARSE? (Pasará al supervisor para su aprobación final)")) return;
+            try {
+                const res = await fetch('/api/desestimado_verificar', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        caso_id: casoId,
+                        accion: 'CONFIRMAR_DESESTIMADO',
+                        operador_validador_id: currentOperatorId
+                    })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    alert("Caso verificado y enviado al supervisor.");
+                    loadDesestimadosRevisionCount();
+                } else {
+                    alert("Error: " + d.error);
+                }
+            } catch(e) {
+                alert("Error de conexión: " + e);
+            }
+        }
+
+        async function gestionarValidoModal(casoId) {
+            const nuevoEstatus = prompt("El cliente contestó y el caso es válido.\n\nIndica el estatus real:\n1 = ATENDIDO\n2 = POR ATENDER\n3 = RECATEGORIZAR", "2");
+            if (!nuevoEstatus) return;
+
+            let estText = "POR ATENDER";
+            if (nuevoEstatus === "1") estText = "ATENDIDO";
+            else if (nuevoEstatus === "3") estText = "RECATEGORIZAR";
+
+            const notas = prompt("Escribe las observaciones de la llamada:", "Avería confirmada en contacto telefónico.");
+            if (!notas) return;
+
+            try {
+                const res = await fetch('/api/desestimado_verificar', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        caso_id: casoId,
+                        accion: 'GESTIONAR_VALIDO',
+                        estatus_llamada: estText,
+                        persiste: 'SI',
+                        requiere_campo: 'SI',
+                        observaciones: notas,
+                        operador_validador_id: currentOperatorId
+                    })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    alert(`¡Caso gestionado con éxito como ${estText}! Se sumó a tu avance del día y se registró la improcedencia.`);
+                    loadDesestimadosRevisionCount();
+                    loadOperatorQueue();
+                } else {
+                    alert("Error: " + d.error);
+                }
+            } catch(e) {
+                alert("Error de conexión: " + e);
+            }
         }
     </script>
 </body>

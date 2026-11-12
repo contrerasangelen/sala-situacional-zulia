@@ -974,6 +974,12 @@
                 }
 
                 data.forEach(c => {
+                    const fEnv = c.fecha_contacto || (c.actualizado_en ? c.actualizado_en.slice(0, 10) : 'N/A');
+                    let diasBadge = '';
+                    if (fEnv !== 'N/A') {
+                        const diffDays = Math.max(0, Math.floor((new Date() - new Date(fEnv + 'T00:00:00')) / 86400000));
+                        diasBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${diffDays >= 1 ? 'bg-rose-950 text-rose-300 border border-rose-500/50' : 'bg-slate-700 text-slate-300'}">📅 ${fEnv} (${diffDays}d)</span>`;
+                    }
                     const card = document.createElement('div');
                     card.className = "bg-slate-800/80 border border-purple-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-start justify-between gap-4";
                     card.innerHTML = `
@@ -981,7 +987,7 @@
                             <div class="flex items-center gap-2 mb-1">
                                 <span class="font-mono font-bold text-white text-xs">${c.codigo_caso}</span>
                                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600/30 text-blue-300">${c.categoria_homologada}</span>
-                                <span class="text-xs text-slate-400">Operador: <strong class="text-white">${c.operador_nombre}</strong></span>
+                                <span class="text-xs text-slate-400">Operador: <strong class="text-white">${c.operador_nombre}</strong></span> ${diasBadge}
                             </div>
                             <p class="text-xs text-slate-300 font-semibold mb-1">Estatus marcado: <span class="text-amber-400 font-bold">${c.estatus_llamada}</span> | Persiste: ${c.persiste} | Campo: ${c.requiere_campo}</p>
                             <p class="text-xs text-slate-300 bg-slate-900 p-2 rounded-lg italic border border-slate-700/60">"${c.observaciones || 'Sin observación'}"</p>
