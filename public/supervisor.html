@@ -28,7 +28,7 @@
 
         <div class="flex items-center flex-wrap gap-2">
             <!-- Botón Consecutivos en Línea para Campo -->
-            <button onclick="descargarConsecutivosLinea()" class="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow transition flex items-center gap-1.5">
+            <button onclick="switchTab('tab-consecutivos')" class="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow transition flex items-center gap-1.5">
                 ⚡ Consecutivos en Línea <span id="badge-consecutivos-header" class="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-900 text-amber-300 font-black">0</span>
             </button>
             <!-- Botón de Excel para Recategorizar -->
@@ -454,8 +454,12 @@
     </section>
 
     <script>
-        let operatorsData = [];
-        let currentPeriod = 'historico';
+
+        var tableGroupFilter = 'todos';
+        var currentPeriod = 'historico';
+                    
+        operatorsData = [];
+        currentPeriod = 'historico';
         let customDesde = '';
         let customHasta = '';
 
@@ -471,6 +475,7 @@
             if (tabId === 'tab-desestimar') loadDesestimados();
             if (tabId === 'tab-consecutivos') loadConsecutivosTable();
             if (tabId === 'tab-asignacion') refreshAvailableFiles();
+            if (tabId === 'tab-reasignacion') populateReassignSelects();
         }
 
         function setPeriod(period) {
@@ -501,6 +506,47 @@
             updateConsecutivosBadge();
         }
 
+        
+        function descargarConsecutivosLinea() {
+            window.location.href = '/api/export_consecutivos_linea?tipo=pendientes';
+            setTimeout(loadDashboardData, 2000);
+        }
+
+        async function updateConsecutivosBadges() {
+            try {
+                const res = await fetch('/api/consecutivos_pendientes_count');
+                const data = await res.json();
+                const p = (data.pendientes !== undefined) ? data.pendientes : (data.total || 0);
+                const bh = document.getElementById('badge-consecutivos-header');
+                if (bh) bh.innerText = p;
+                const bt = document.getElementById('badge-consecutivos-tab');
+                if (bt) bt.innerText = p;
+            } catch(e) {
+                console.warn('Error loading consecutivos count', e);
+            }
+        }
+
+        
+        async function updateConsecutivosBadge() {
+            try {
+                const res = await fetch('/api/consecutivos_pendientes_count');
+                const data = await res.json();
+                const p = (data.pendientes !== undefined) ? data.pendientes : (data.total || 0);
+                const bh = document.getElementById('badge-consecutivos-header');
+                if (bh) bh.innerText = p;
+                const bt = document.getElementById('badge-consecutivos-tab');
+                if (bt) bt.innerText = p;
+            } catch (e) {
+                console.warn('Error cargando contador de consecutivos:', e);
+            }
+        }
+        
+
+        function descargarConsecutivosLinea() {
+            window.location.href = '/api/export_consecutivos_linea?tipo=pendientes';
+            setTimeout(loadDashboardData, 2000);
+        }
+
         async function loadDashboardData() {
             let urlParams = `?periodo=${currentPeriod}`;
             if (currentPeriod === 'custom') urlParams += `&desde=${customDesde}&hasta=${customHasta}`;
@@ -527,8 +573,9 @@
                 let totCasos = 0, totAud = 0, totAtend = 0, totSin = 0, totPor = 0, totCamp = 0, totIncons = 0;
 
                 renderOperatorsTableRows();
+                updateConsecutivosBadges();
 
-        let tableGroupFilter = 'todos';
+        
 
         function filterOperatorsTable(group) {
             tableGroupFilter = group;
@@ -539,6 +586,7 @@
                     : "px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-300 hover:text-white transition";
             });
             renderOperatorsTableRows();
+                updateConsecutivosBadges();
         }
 
         function renderOperatorsTableRows() {
@@ -659,7 +707,8 @@
         // Cargar Checkboxes de Operadores Activos para Asignación
         function populateOpsCheckboxes() {
             const cont = document.getElementById('ops-checkboxes');
-            if (cont.children.length > 0) return; // ya cargado
+            if (!cont) return;
+            if (cont.children && cont.children.length > 0) return;
             cont.innerHTML = '';
             cont.className = "space-y-4";
 
@@ -829,23 +878,45 @@
             window.location.href = '/api/export_excel';
         }
 
-        function populateReassignSelects() {
+        async function populateReassignSelects() {
             const sFrom = document.getElementById('reassign-from');
             const sTo = document.getElementById('reassign-to');
-            sFrom.innerHTML = '';
-            sTo.innerHTML = '';
+            if (!sFrom || !sTo) return;
 
-            operatorsData.forEach(op => {
-                const opt1 = document.createElement('option');
-                opt1.value = op.id;
-                opt1.innerText = `${op.id}. ${op.nombre} (${op.tot_casos - op.auditados} pendientes)`;
-                sFrom.appendChild(opt1);
+            sFrom.innerHTML = '<option value="">⏳ Cargando operadores y llamadas pendientes...</option>';
+            sTo.innerHTML = '<option value="">⏳ Cargando operadores...</option>';
 
-                const opt2 = document.createElement('option');
-                opt2.value = op.id;
-                opt2.innerText = `${op.id}. ${op.nombre}`;
-                sTo.appendChild(opt2);
-            });
+            try {
+                const res = await fetch('/api/supervisor/operators_reassign_info');
+                const ops = await res.json();
+
+                sFrom.innerHTML = '';
+                sTo.innerHTML = '';
+
+                // Agrupar por grupo para mejor lectura
+                ops.forEach(op => {
+                    const idStr = op.id < 10 ? `0${op.id}` : `${op.id}`;
+                    const labelFrom = `Op ${idStr} - ${op.nombre} [${op.pendientes_llamadas} llamadas / ${op.pendientes_casos} casos pendientes]`;
+                    const labelTo = `Op ${idStr} - ${op.nombre} (${op.grupo || 'SALA'})`;
+
+                    const opt1 = document.createElement('option');
+                    opt1.value = op.id;
+                    opt1.textContent = labelFrom;
+                    if (op.pendientes_llamadas === 0) {
+                        opt1.textContent += ' (Sin llamadas pendientes)';
+                    }
+                    sFrom.appendChild(opt1);
+
+                    const opt2 = document.createElement('option');
+                    opt2.value = op.id;
+                    opt2.textContent = labelTo;
+                    sTo.appendChild(opt2);
+                });
+            } catch (err) {
+                console.error("Error al cargar operadores para reasignación:", err);
+                sFrom.innerHTML = '<option value="">Error al cargar lista</option>';
+                sTo.innerHTML = '<option value="">Error al cargar lista</option>';
+            }
         }
 
         async function loadInconsistencias() {
@@ -936,29 +1007,53 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
         async function executeReassignment() {
             const fromOp = document.getElementById('reassign-from').value;
             const toOp = document.getElementById('reassign-to').value;
-            const count = document.getElementById('reassign-count').value;
+            const count = parseInt(document.getElementById('reassign-count').value) || 10;
+
+            if (!fromOp || !toOp) {
+                alert("Por favor selecciona el operador origen y el operador destino.");
+                return;
+            }
 
             if (fromOp === toOp) {
                 alert("El operador origen y destino no pueden ser el mismo.");
                 return;
             }
 
-            if (!confirm(`¿Confirmas transferir ${count} clientes del Operador ${fromOp} al Operador ${toOp}?`)) return;
+            const sFrom = document.getElementById('reassign-from');
+            const sTo = document.getElementById('reassign-to');
+            const fromText = sFrom.options[sFrom.selectedIndex] ? sFrom.options[sFrom.selectedIndex].text : `Op #${fromOp}`;
+            const toText = sTo.options[sTo.selectedIndex] ? sTo.options[sTo.selectedIndex].text : `Op #${toOp}`;
 
-            const res = await fetch('/api/supervisor/reasignar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    from_operador_id: fromOp,
-                    to_operador_id: toOp,
-                    cantidad_clientes: count
-                })
-            });
-            const data = await res.json();
-            if (data.success) {
-                alert(`¡Éxito! Se reasignaron ${data.reassigned_clients} clientes.`);
+            if (!confirm(`¿Confirmas transferir hasta ${count} llamadas/denunciantes?\n\nDesde: ${fromText}\nHacia: ${toText}`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/supervisor/reasignar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        from_operador_id: parseInt(fromOp),
+                        to_operador_id: parseInt(toOp),
+                        cantidad_clientes: count
+                    })
+                });
+                const data = await res.json();
+                const movidos = data.clientes_movidos !== undefined ? data.clientes_movidos : (data.reassigned_clients || 0);
+                const casosMov = data.casos_movidos || 0;
+
+                if (movidos > 0) {
+                    alert(`✅ ¡Reasignación Exitosa!\n\nSe transfirieron ${movidos} llamadas (${casosMov} casos) hacia ${toText}.`);
+                } else {
+                    alert("⚠️ El operador origen no tiene llamadas pendientes con averías activas para transferir.");
+                }
+
+                await populateReassignSelects();
                 loadDashboardData();
-            updateConsecutivosBadge();
+                updateConsecutivosBadge();
+            } catch (err) {
+                console.error("Error ejecutando reasignación:", err);
+                alert("Error de conexión al reasignar: " + err.message);
             }
         }
 
