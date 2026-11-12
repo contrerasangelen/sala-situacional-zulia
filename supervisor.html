@@ -487,7 +487,7 @@
             if (tabId === 'tab-calidad') loadInconsistencias();
             if (tabId === 'tab-desestimar') loadDesestimados();
             if (tabId === 'tab-consecutivos') loadConsecutivosTable();
-            if (tabId === 'tab-asignacion') refreshAvailableFiles();
+            if (tabId === 'tab-asignacion') { refreshAvailableFiles(); populateOpsCheckboxes(); }
             if (tabId === 'tab-reasignacion') populateReassignSelects();
         }
 
@@ -718,73 +718,80 @@
         }
 
         // Cargar Checkboxes de Operadores Activos para Asignación
-        function populateOpsCheckboxes() {
+        async function populateOpsCheckboxes() {
             const cont = document.getElementById('ops-checkboxes');
             if (!cont) return;
-            if (cont.children && cont.children.length > 0) return;
-            cont.innerHTML = '';
             cont.className = "space-y-4";
 
-            const princOps = operatorsData.filter(o => o.id <= 15 && o.id !== 99);
-            const apoyoOps = operatorsData.filter(o => o.id > 15 && o.id !== 99);
+            try {
+                const res = await fetch('/api/operators_list');
+                const ops = await res.json();
+                
+                cont.innerHTML = '';
 
-            // Sección 1: Operadores Principales
-            const secPrinc = document.createElement('div');
-            secPrinc.className = "bg-slate-900/80 p-3 rounded-xl border border-slate-800";
-            secPrinc.innerHTML = `
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs font-bold text-blue-400 uppercase flex items-center gap-1.5">
-                        🏢 Operadores Principales (1 a 15)
-                    </span>
-                    <div class="flex gap-2">
-                        <button onclick="toggleGroupOps('principal', true)" class="text-[11px] text-blue-400 font-bold hover:underline">Marcar (15)</button>
-                        <span class="text-slate-600">|</span>
-                        <button onclick="toggleGroupOps('principal', false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                const princOps = ops.filter(o => o.id <= 15 && o.id !== 99);
+                const apoyoOps = ops.filter(o => o.id > 15 && o.id !== 99);
+
+                // Sección 1: Operadores Principales
+                const secPrinc = document.createElement('div');
+                secPrinc.className = "bg-slate-900/80 p-3 rounded-xl border border-slate-800";
+                secPrinc.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-blue-400 uppercase flex items-center gap-1.5">
+                            🏢 Operadores Principales (1 a 15)
+                        </span>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="toggleGroupOps('principal', true)" class="text-[11px] text-blue-400 font-bold hover:underline">Marcar (${princOps.length})</button>
+                            <span class="text-slate-600">|</span>
+                            <button type="button" onclick="toggleGroupOps('principal', false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                        </div>
                     </div>
-                </div>
-                <div id="grid-ops-princ" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
-            `;
-            cont.appendChild(secPrinc);
-
-            const gridP = secPrinc.querySelector('#grid-ops-princ');
-            princOps.forEach(op => {
-                const label = document.createElement('label');
-                label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-blue-500 text-xs text-white";
-                label.innerHTML = `
-                    <input type="checkbox" value="${op.id}" data-grupo="principal" class="op-checkbox text-blue-600 rounded" checked>
-                    <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
+                    <div id="grid-ops-princ" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
                 `;
-                gridP.appendChild(label);
-            });
+                cont.appendChild(secPrinc);
 
-            // Sección 2: Personal de Apoyo
-            const secApoyo = document.createElement('div');
-            secApoyo.className = "bg-slate-900/80 p-3 rounded-xl border border-emerald-900/40";
-            secApoyo.innerHTML = `
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs font-bold text-emerald-400 uppercase flex items-center gap-1.5">
-                        🤝 Personal de Apoyo (16 a 25)
-                    </span>
-                    <div class="flex gap-2">
-                        <button onclick="toggleGroupOps('apoyo', true)" class="text-[11px] text-emerald-400 font-bold hover:underline">Marcar (10)</button>
-                        <span class="text-slate-600">|</span>
-                        <button onclick="toggleGroupOps('apoyo', false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                const gridP = secPrinc.querySelector('#grid-ops-princ');
+                princOps.forEach(op => {
+                    const label = document.createElement('label');
+                    label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-blue-500 text-xs text-white";
+                    label.innerHTML = `
+                        <input type="checkbox" value="${op.id}" data-grupo="principal" class="op-checkbox text-blue-600 rounded" checked>
+                        <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
+                    `;
+                    gridP.appendChild(label);
+                });
+
+                // Sección 2: Personal de Apoyo
+                const secApoyo = document.createElement('div');
+                secApoyo.className = "bg-slate-900/80 p-3 rounded-xl border border-emerald-900/40";
+                secApoyo.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-emerald-400 uppercase flex items-center gap-1.5">
+                            🤝 Personal de Apoyo (16 a 25)
+                        </span>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="toggleGroupOps('apoyo', true)" class="text-[11px] text-emerald-400 font-bold hover:underline">Marcar (${apoyoOps.length})</button>
+                            <span class="text-slate-600">|</span>
+                            <button type="button" onclick="toggleGroupOps('apoyo', false)" class="text-[11px] text-slate-400 font-bold hover:underline">Desmarcar</button>
+                        </div>
                     </div>
-                </div>
-                <div id="grid-ops-apoyo" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
-            `;
-            cont.appendChild(secApoyo);
-
-            const gridA = secApoyo.querySelector('#grid-ops-apoyo');
-            apoyoOps.forEach(op => {
-                const label = document.createElement('label');
-                label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-emerald-500 text-xs text-white";
-                label.innerHTML = `
-                    <input type="checkbox" value="${op.id}" data-grupo="apoyo" class="op-checkbox text-emerald-600 rounded" checked>
-                    <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
+                    <div id="grid-ops-apoyo" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
                 `;
-                gridA.appendChild(label);
-            });
+                cont.appendChild(secApoyo);
+
+                const gridA = secApoyo.querySelector('#grid-ops-apoyo');
+                apoyoOps.forEach(op => {
+                    const label = document.createElement('label');
+                    label.className = "flex items-center gap-2 p-2 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer hover:border-emerald-500 text-xs text-white";
+                    label.innerHTML = `
+                        <input type="checkbox" value="${op.id}" data-grupo="apoyo" class="op-checkbox text-emerald-600 rounded" checked>
+                        <span class="font-bold truncate">${op.id}. ${op.nombre}</span>
+                    `;
+                    gridA.appendChild(label);
+                });
+            } catch (err) {
+                console.error("Error cargando operadores para checkboxes:", err);
+            }
         }
 
         function toggleGroupOps(group, checked) {
