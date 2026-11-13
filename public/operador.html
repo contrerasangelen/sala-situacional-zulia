@@ -345,6 +345,12 @@
                     b.className = `${flexClass} text-[11px] font-bold rounded bg-slate-800 ${textColor} hover:bg-slate-700`;
                 }
             });
+            const btnDes = document.getElementById('filter-desestimados-revision');
+            if (btnDes && !btnDes.classList.contains('hidden')) {
+                btnDes.className = filter === 'desestimados_revision'
+                    ? "py-1 px-2 text-[11px] font-bold rounded bg-purple-600 text-white border border-purple-400 shadow"
+                    : "py-1 px-2 text-[11px] font-bold rounded bg-purple-950/80 text-purple-300 border border-purple-600/50 hover:bg-purple-900";
+            }
             renderQueue();
         }
 
@@ -367,6 +373,10 @@
         }
 
         function renderQueue() {
+            if (currentFilter === 'desestimados_revision') {
+                renderDesestimadosRevisionQueue();
+                return;
+            }
             const cont = document.getElementById('queue-container');
             cont.innerHTML = '';
 
