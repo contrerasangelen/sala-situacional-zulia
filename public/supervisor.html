@@ -140,14 +140,12 @@
                     <thead class="bg-slate-800/80 text-[11px] uppercase font-bold text-slate-400">
                         <tr>
                             <th class="p-3">Operador</th>
-                            <th class="p-3">Estado</th>
-                            <th class="p-3">Última Llamada</th>
-                            <th class="p-3 text-center">Clientes</th>
+                            <th class="p-3 text-center">Llamadas</th>
                             <th class="p-3 text-center">Casos Totales</th>
                             <th class="p-3 text-center">Auditados</th>
+                            <th class="p-3 text-center">Pendientes</th>
                             <th class="p-3 text-center">% Avance</th>
                             <th class="p-3 text-center">Solventados</th>
-                            <th class="p-3 text-center">% Efectividad</th>
                             <th class="p-3 text-center">Sin Com.</th>
                             <th class="p-3 text-center">Por Atender</th>
                             <th class="p-3 text-center">Campo</th>
@@ -639,6 +637,7 @@
                         </div>
                         ${badgeGrupo}
                     </td>
+                    <td class="p-3 text-center font-black text-indigo-300">${op.tot_clientes || 0}</td>
                     <td class="p-3 text-center font-bold text-slate-300">${op.tot_casos || 0}</td>
                     <td class="p-3 text-center font-bold text-cyan-400">${op.auditados || 0}</td>
                     <td class="p-3 text-center font-bold text-slate-400">${(op.tot_casos || 0) - (op.auditados || 0)}</td>
