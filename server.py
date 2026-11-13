@@ -241,37 +241,43 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
         # 1. Estadísticas Globales
         if path == "/api/stats":
-            cur.execute("SELECT COUNT(*) FROM casos")
-            tot_casos = cur.fetchone()[0]
+            scope_sql = " AND operador_id != 99" if periodo == "diario" else ""
+            if periodo == "diario":
+                cur.execute("SELECT COUNT(*) FROM casos WHERE operador_id != 99")
+                tot_casos = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(DISTINCT id_llamada) FROM casos WHERE operador_id != 99")
+                tot_clientes = cur.fetchone()[0]
+            else:
+                cur.execute("SELECT COUNT(*) FROM casos")
+                tot_casos = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(DISTINCT id_llamada) FROM clientes")
+                tot_clientes = cur.fetchone()[0]
 
-            cur.execute("SELECT COUNT(DISTINCT id_llamada) FROM clientes")
-            tot_clientes = cur.fetchone()[0]
-
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada IS NOT NULL AND estatus_llamada != ''{date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada IS NOT NULL AND estatus_llamada != ''{scope_sql}{date_filter_sql}", date_params)
             casos_auditados = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(DISTINCT id_llamada) FROM casos WHERE estatus_llamada IS NOT NULL AND estatus_llamada != ''{date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(DISTINCT id_llamada) FROM casos WHERE estatus_llamada IS NOT NULL AND estatus_llamada != ''{scope_sql}{date_filter_sql}", date_params)
             clientes_contactados = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada IN ('ATENDIDO', 'ATENDIDO POR TERCEROS'){date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada IN ('ATENDIDO', 'ATENDIDO POR TERCEROS'){scope_sql}{date_filter_sql}", date_params)
             casos_atendidos = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada IN ('SIN COMUNICACIÓN', 'SIN INFORMACION'){date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada IN ('SIN COMUNICACIÓN', 'SIN INFORMACION'){scope_sql}{date_filter_sql}", date_params)
             casos_sin_com = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada = 'POR ATENDER'{date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE estatus_llamada = 'POR ATENDER'{scope_sql}{date_filter_sql}", date_params)
             casos_por_atender = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE requiere_campo = 'SI'{date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE requiere_campo = 'SI'{scope_sql}{date_filter_sql}", date_params)
             casos_requieren_campo = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE inconsistencia_flag = 1{date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE inconsistencia_flag = 1{scope_sql}{date_filter_sql}", date_params)
             casos_inconsistentes = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE devuelto_flag = 1{date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE devuelto_flag = 1{scope_sql}{date_filter_sql}", date_params)
             casos_devueltos = cur.fetchone()[0]
 
-            cur.execute(f"SELECT COUNT(*) FROM casos WHERE (estatus_llamada = 'DESESTIMAR' OR persiste = 'DESESTIMAR'){date_filter_sql}", date_params)
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE (estatus_llamada = 'DESESTIMAR' OR persiste = 'DESESTIMAR'){scope_sql}{date_filter_sql}", date_params)
             casos_desestimados = cur.fetchone()[0]
 
             pct_avance = round(casos_auditados / tot_casos * 100, 1) if tot_casos else 0
