@@ -61,9 +61,6 @@
                     <button onclick="setFilter('pendientes')" id="filter-pendientes" class="flex-1 py-1 text-[11px] font-bold rounded bg-slate-800 text-slate-300 hover:bg-slate-700">
                         Pendientes <span id="cnt-pendientes" class="text-[10px] opacity-80">(0)</span>
                     </button>
-                    <button onclick="setFilter('reintentos')" id="filter-reintentos" class="flex-1 py-1 text-[11px] font-bold rounded bg-slate-800 text-amber-400 hover:bg-slate-700">
-                        Reintentos <span id="cnt-reintentos" class="text-[10px] opacity-80">(0)</span>
-                    </button>
                     <button onclick="setFilter('devueltos')" id="filter-devueltos" class="py-1 px-2 text-[11px] font-bold rounded bg-slate-800 text-rose-400 hover:bg-slate-700">
                         🔔 <span id="cnt-devueltos" class="text-[10px] opacity-80">(0)</span>
                     </button>
@@ -335,12 +332,13 @@
 
         function setFilter(filter) {
             currentFilter = filter;
-            ['todos', 'pendientes', 'reintentos', 'devueltos'].forEach(f => {
+            ['todos', 'pendientes', 'devueltos'].forEach(f => {
                 const b = document.getElementById(`filter-${f}`);
+                if (!b) return;
                 if (f === filter) {
                     b.className = "flex-1 py-1 text-[11px] font-bold rounded bg-blue-600 text-white shadow";
                 } else {
-                    const textColor = f === 'reintentos' ? 'text-amber-400' : (f === 'devueltos' ? 'text-rose-400' : 'text-slate-300');
+                    const textColor = f === 'devueltos' ? 'text-rose-400' : 'text-slate-300';
                     const flexClass = f === 'devueltos' ? 'py-1 px-2' : 'flex-1 py-1';
                     b.className = `${flexClass} text-[11px] font-bold rounded bg-slate-800 ${textColor} hover:bg-slate-700`;
                 }
@@ -357,8 +355,7 @@
         function updateProgressBar() {
             const tot = currentQueue.length;
             const gest = currentQueue.filter(c => c.num_casos === c.auditados_en_grupo).length;
-            const reint = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO') && c.auditados_en_grupo < c.num_casos).length;
-            const pend = currentQueue.filter(c => (!c.tipo_contacto || !c.tipo_contacto.includes('REINTENTO')) && c.auditados_en_grupo < c.num_casos).length;
+            const pend = currentQueue.filter(c => c.auditados_en_grupo < c.num_casos).length;
             const dev = currentQueue.filter(c => c.has_devueltos == 1).length;
 
             const pct = tot > 0 ? Math.round((gest / tot) * 100) : 0;
@@ -368,7 +365,6 @@
             // Actualizar contadores en los botones
             document.getElementById('cnt-todos').innerText = `(${tot})`;
             document.getElementById('cnt-pendientes').innerText = `(${pend})`;
-            document.getElementById('cnt-reintentos').innerText = `(${reint})`;
             document.getElementById('cnt-devueltos').innerText = `(${dev})`;
         }
 
@@ -382,9 +378,7 @@
 
             let filtered = currentQueue;
             if (currentFilter === 'pendientes') {
-                filtered = currentQueue.filter(c => (!c.tipo_contacto || !c.tipo_contacto.includes('REINTENTO')) && c.auditados_en_grupo < c.num_casos);
-            } else if (currentFilter === 'reintentos') {
-                filtered = currentQueue.filter(c => c.tipo_contacto && c.tipo_contacto.includes('REINTENTO') && c.auditados_en_grupo < c.num_casos);
+                filtered = currentQueue.filter(c => c.auditados_en_grupo < c.num_casos);
             } else if (currentFilter === 'devueltos') {
                 filtered = currentQueue.filter(c => c.has_devueltos == 1);
             }
