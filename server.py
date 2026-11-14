@@ -8,6 +8,11 @@ import os
 import glob
 import re
 import urllib.parse
+import urllib.request
+import base64
+import tempfile
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 def get_vet_time():
@@ -35,6 +40,174 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "contrerasangelen/sala-situacional-zulia").strip()
+BACKUP_BRANCH = os.environ.get("BACKUP_BRANCH", "backup-db").strip()
+
+_backup_lock = threading.Lock()
+_db_dirty = False
+_last_write_ts = 0.0
+_last_backup_ts = 0.0
+_last_backup_at = None
+_last_backup_error = None
+
+def mark_db_dirty():
+    global _db_dirty, _last_write_ts
+    with _backup_lock:
+        _db_dirty = True
+        _last_write_ts = time.time()
+
+def _gh_api(method, endpoint, payload=None):
+    url = f"https://api.github.com{endpoint}"
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SalaSituacionalBackup/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def _local_db_signature():
+    if not os.path.exists(DB_PATH):
+        return (0, "")
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        gest = conn.execute("SELECT COUNT(*) FROM casos WHERE estado_auditoria='GESTIONADO'").fetchone()[0]
+        max_act = conn.execute("SELECT COALESCE(MAX(actualizado_en), '') FROM casos").fetchone()[0] or ""
+        return (gest, str(max_act))
+    except Exception:
+        return (0, "")
+    finally:
+        conn.close()
+
+def restore_db_from_github_if_newer():
+    global _last_backup_at, _last_backup_error
+    if not GITHUB_TOKEN:
+        return
+    try:
+        ref = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/ref/heads/{BACKUP_BRANCH}")
+        commit_sha = ref["object"]["sha"]
+        commit = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/commits/{commit_sha}")
+        tree = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/trees/{commit['tree']['sha']}")
+        entries = {e["path"]: e["sha"] for e in tree.get("tree", [])}
+        if "sala_situacional.db" not in entries or "backup_meta.json" not in entries:
+            return
+        meta_blob = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/blobs/{entries['backup_meta.json']}")
+        meta = json.loads(base64.b64decode(meta_blob["content"]).decode("utf-8"))
+        remote_max = str(meta.get("max_actualizado", ""))
+        remote_gest = int(meta.get("gestionados", 0))
+        local_gest, local_max = _local_db_signature()
+
+        if remote_max > local_max or (remote_max == local_max and remote_gest > local_gest):
+            db_blob = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/blobs/{entries['sala_situacional.db']}")
+            raw_bytes = base64.b64decode(db_blob["content"])
+            tmp_path = DB_PATH + ".restore_tmp"
+            with open(tmp_path, "wb") as f:
+                f.write(raw_bytes)
+            os.replace(tmp_path, DB_PATH)
+            _last_backup_at = meta.get("updated_at")
+            print(f"[BACKUP] Restaurada BD desde {BACKUP_BRANCH} ({_last_backup_at}, {remote_gest} gestionados)")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            _last_backup_error = f"Restore HTTP {e.code}"
+            print("[BACKUP] Error restaurando:", _last_backup_error)
+    except Exception as e:
+        _last_backup_error = str(e)
+        print("[BACKUP] Error restaurando:", e)
+
+def backup_db_to_github(reason="auto"):
+    global _db_dirty, _last_backup_ts, _last_backup_at, _last_backup_error
+    if not GITHUB_TOKEN:
+        return {"ok": False, "error": "GITHUB_TOKEN no configurado"}
+    with _backup_lock:
+        try:
+            fd, tmp_db = tempfile.mkstemp(suffix=".db")
+            os.close(fd)
+            src = sqlite3.connect(DB_PATH)
+            dst = sqlite3.connect(tmp_db)
+            src.backup(dst)
+            dst.close()
+            src.close()
+
+            with open(tmp_db, "rb") as f:
+                db_b64 = base64.b64encode(f.read()).decode("ascii")
+            os.remove(tmp_db)
+
+            gest, max_act = _local_db_signature()
+            now_str = get_vet_time().strftime("%Y-%m-%d %H:%M:%S")
+            meta_bytes = json.dumps({
+                "updated_at": now_str,
+                "gestionados": gest,
+                "max_actualizado": max_act,
+                "reason": reason
+            }).encode("utf-8")
+            meta_b64 = base64.b64encode(meta_bytes).decode("ascii")
+
+            try:
+                ref = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/ref/heads/{BACKUP_BRANCH}")
+                parent_sha = ref["object"]["sha"]
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    main_ref = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/ref/heads/main")
+                    parent_sha = main_ref["object"]["sha"]
+                    _gh_api("POST", f"/repos/{GITHUB_REPO}/git/refs", {
+                        "ref": f"refs/heads/{BACKUP_BRANCH}",
+                        "sha": parent_sha
+                    })
+                else:
+                    raise
+
+            parent_commit = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/commits/{parent_sha}")
+            db_blob = _gh_api("POST", f"/repos/{GITHUB_REPO}/git/blobs", {"content": db_b64, "encoding": "base64"})
+            meta_blob = _gh_api("POST", f"/repos/{GITHUB_REPO}/git/blobs", {"content": meta_b64, "encoding": "base64"})
+
+            tree = _gh_api("POST", f"/repos/{GITHUB_REPO}/git/trees", {
+                "base_tree": parent_commit["tree"]["sha"],
+                "tree": [
+                    {"path": "sala_situacional.db", "mode": "100644", "type": "blob", "sha": db_blob["sha"]},
+                    {"path": "backup_meta.json", "mode": "100644", "type": "blob", "sha": meta_blob["sha"]},
+                ]
+            })
+            commit = _gh_api("POST", f"/repos/{GITHUB_REPO}/git/commits", {
+                "message": f"Auto-backup BD ({reason}) {now_str} VET",
+                "tree": tree["sha"],
+                "parents": [parent_sha]
+            })
+            _gh_api("PATCH", f"/repos/{GITHUB_REPO}/git/refs/heads/{BACKUP_BRANCH}", {"sha": commit["sha"], "force": True})
+
+            _db_dirty = False
+            _last_backup_ts = time.time()
+            _last_backup_at = now_str
+            _last_backup_error = None
+            print(f"[BACKUP] Guardado en {BACKUP_BRANCH} ({reason}) a las {now_str}")
+            return {"ok": True, "updated_at": now_str, "reason": reason}
+        except Exception as e:
+            _last_backup_error = str(e)
+            print("[BACKUP] Error guardando:", e)
+            return {"ok": False, "error": str(e)}
+
+def _backup_worker():
+    while True:
+        time.sleep(60)
+        if not GITHUB_TOKEN:
+            continue
+        with _backup_lock:
+            dirty = _db_dirty
+            since_write = time.time() - _last_write_ts
+            since_backup = time.time() - _last_backup_ts
+        if dirty:
+            if since_write >= 180:
+                backup_db_to_github(reason="idle")
+            elif since_backup >= 300:
+                backup_db_to_github(reason="periodic")
+
+restore_db_from_github_if_newer()
 
 def init_db_schema():
     conn = get_db()
@@ -83,6 +256,7 @@ def init_db_schema():
         conn.close()
 
 init_db_schema()
+threading.Thread(target=_backup_worker, daemon=True).start()
 
 
 # Formateo nacional de teléfonos
@@ -311,6 +485,18 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 conn.commit()
             conn.close()
             self.send_json({"ok": True})
+            return
+
+        elif path == "/api/backup_status":
+            conn.close()
+            with _backup_lock:
+                self.send_json({
+                    "enabled": bool(GITHUB_TOKEN),
+                    "branch": BACKUP_BRANCH,
+                    "last_backup_at": _last_backup_at,
+                    "last_error": _last_backup_error,
+                    "dirty": _db_dirty
+                })
             return
 
         elif path == "/api/operators_stats":
@@ -941,6 +1127,12 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"error": "Endpoint no encontrado"}, 404)
 
     def handle_api_post(self, path, data):
+        if path == "/api/backup_now":
+            res = backup_db_to_github(reason="manual")
+            self.send_json(res, 200 if res.get("ok") else 400)
+            return
+
+        mark_db_dirty()
         conn = get_db()
         cur = conn.cursor()
 

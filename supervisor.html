@@ -38,6 +38,9 @@
             <button onclick="exportLiveExcel()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow transition flex items-center gap-1.5">
                 📥 Consolidado General
             </button>
+            <button id="btn-backup-cloud" onclick="triggerManualBackup()" title="Respaldar base de datos en la nube (GitHub)" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+                ☁️ Respaldo: Verificando...
+            </button>
             <a href="/monitor" target="_blank" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
                 📺 Pantalla Gigante
             </a>
@@ -1481,5 +1484,64 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
             </form>
         </div>
     </div>
+    <script>
+        async function refreshBackupStatus() {
+            const btn = document.getElementById('btn-backup-cloud');
+            if (!btn) return;
+            try {
+                const res = await fetch('/api/backup_status');
+                if (!res.ok) return;
+                const d = await res.json();
+                if (!d.enabled) {
+                    btn.innerText = '☁️ Respaldo: Sin Token';
+                    btn.className = 'px-3 py-2 rounded-xl text-xs font-bold bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border border-amber-700/60 transition flex items-center gap-1.5';
+                    btn.title = 'Configura GITHUB_TOKEN en Render para activar el respaldo automático en la nube';
+                } else if (d.last_error) {
+                    btn.innerText = '⚠️ Respaldo: Error';
+                    btn.className = 'px-3 py-2 rounded-xl text-xs font-bold bg-red-950/60 hover:bg-red-900/60 text-red-300 border border-red-700/60 transition flex items-center gap-1.5';
+                    btn.title = 'Último error: ' + d.last_error + ' (clic para reintentar)';
+                } else if (d.dirty) {
+                    btn.innerText = '☁️ Respaldo: Pendiente';
+                    btn.className = 'px-3 py-2 rounded-xl text-xs font-bold bg-sky-950/70 hover:bg-sky-900/70 text-sky-300 border border-sky-700/60 transition flex items-center gap-1.5';
+                    btn.title = 'Hay cambios locales pendientes por respaldar (clic para respaldar ahora)';
+                } else if (d.last_backup_at) {
+                    const hora = d.last_backup_at.slice(11, 16);
+                    btn.innerText = '☁️ Respaldado ' + hora;
+                    btn.className = 'px-3 py-2 rounded-xl text-xs font-bold bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 transition flex items-center gap-1.5';
+                    btn.title = 'Último respaldo en rama ' + d.branch + ': ' + d.last_backup_at + ' (clic para respaldar ahora)';
+                } else {
+                    btn.innerText = '☁️ Respaldo: Activo';
+                    btn.className = 'px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition flex items-center gap-1.5';
+                    btn.title = 'Respaldo automático activo (clic para respaldar ahora)';
+                }
+            } catch (e) {}
+        }
+
+        async function triggerManualBackup() {
+            const btn = document.getElementById('btn-backup-cloud');
+            if (!btn) return;
+            const prev = btn.innerText;
+            btn.innerText = '⏳ Respaldando...';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/backup_now', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                const d = await res.json();
+                if (!d.ok) {
+                    alert('No se pudo respaldar: ' + (d.error || 'Error desconocido'));
+                }
+            } catch (e) {
+                alert('Error de conexión al intentar respaldar.');
+            } finally {
+                btn.disabled = false;
+                await refreshBackupStatus();
+                if (btn.innerText === '⏳ Respaldando...') btn.innerText = prev;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshBackupStatus();
+            setInterval(refreshBackupStatus, 30000);
+        });
+    </script>
 </body>
 </html>
