@@ -79,7 +79,7 @@ def _local_db_signature():
     conn = sqlite3.connect(DB_PATH)
     try:
         gest = conn.execute("SELECT COUNT(*) FROM casos WHERE estado_auditoria='GESTIONADO'").fetchone()[0]
-        max_act = conn.execute("SELECT COALESCE(MAX(actualizado_en), '') FROM casos").fetchone()[0] or ""
+        max_act = conn.execute("SELECT COALESCE(MAX(actualizado_en), '') FROM casos WHERE actualizado_en LIKE '20%'").fetchone()[0] or ""
         return (gest, str(max_act))
     except Exception:
         return (0, "")
@@ -104,7 +104,7 @@ def restore_db_from_github_if_newer():
         remote_gest = int(meta.get("gestionados", 0))
         local_gest, local_max = _local_db_signature()
 
-        if remote_max > local_max or (remote_max == local_max and remote_gest > local_gest):
+        if remote_max.startswith("20") and (remote_max > local_max or (remote_max == local_max and remote_gest > local_gest)):
             db_blob = _gh_api("GET", f"/repos/{GITHUB_REPO}/git/blobs/{entries['sala_situacional.db']}")
             raw_bytes = base64.b64decode(db_blob["content"])
             tmp_path = DB_PATH + ".restore_tmp"
