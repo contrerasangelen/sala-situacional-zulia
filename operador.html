@@ -590,7 +590,12 @@
                     <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
                         <div class="flex items-center gap-2">
                             <span class="w-6 h-6 rounded-full ${isDevuelto ? 'bg-rose-600 text-white font-black' : 'bg-blue-600/30 text-blue-400'} font-bold text-xs flex items-center justify-center">${idx+1}</span>
-                            <span class="text-sm font-mono font-black text-white">${c.codigo_caso}</span>
+                            <div class="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-700/80">
+                                <span class="text-sm font-mono font-black text-white tracking-wide">${c.codigo_caso}</span>
+                                <button type="button" onclick="copyCaseCode('${c.codigo_caso}', this)" title="Copiar aviso al portapapeles con 1 clic" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-700 hover:border-blue-500 transition flex items-center gap-1 active:scale-95">
+                                    📋 Copiar
+                                </button>
+                            </div>
                             <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-600/20 text-blue-300 border border-blue-500/30">${c.categoria_homologada}</span>
                             ${isDevuelto ? '<span class="px-2.5 py-1 rounded-lg text-xs font-black bg-rose-600 text-white animate-pulse shadow">🚨 CASO A CORREGIR</span>' : ''}
                         </div>
@@ -838,6 +843,23 @@
                 console.error("Error guardando llamada:", e);
                 alert("Error de conexión al guardar.");
             }
+        }
+
+        function copyCaseCode(code, btn) {
+            if (!code) return;
+            navigator.clipboard.writeText(code).then(() => {
+                if (btn) {
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = '✅ Copiado!';
+                    btn.classList.add('bg-emerald-600', 'text-white');
+                    setTimeout(() => {
+                        btn.innerHTML = originalHtml;
+                        btn.classList.remove('bg-emerald-600', 'text-white');
+                    }, 1500);
+                }
+            }).catch(() => {
+                prompt("Copia el aviso:", code);
+            });
         }
 
         function copyPhone(elementId) {
