@@ -417,9 +417,17 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/stats":
             scope_sql = " AND operador_id != 99" if periodo == "diario" else ""
             if periodo == "diario":
-                cur.execute("SELECT COUNT(*) FROM casos WHERE operador_id != 99")
+                cur.execute("""
+                    SELECT COUNT(*) FROM casos
+                    WHERE operador_id != 99
+                      AND (estado_auditoria = 'PENDIENTE' OR (estado_auditoria = 'GESTIONADO' AND DATE(actualizado_en) = DATE('now', '-4 hours')))
+                """)
                 tot_casos = cur.fetchone()[0]
-                cur.execute("SELECT COUNT(DISTINCT id_llamada) FROM casos WHERE operador_id != 99")
+                cur.execute("""
+                    SELECT COUNT(DISTINCT id_llamada) FROM casos
+                    WHERE operador_id != 99
+                      AND (estado_auditoria = 'PENDIENTE' OR (estado_auditoria = 'GESTIONADO' AND DATE(actualizado_en) = DATE('now', '-4 hours')))
+                """)
                 tot_clientes = cur.fetchone()[0]
             else:
                 cur.execute("SELECT COUNT(*) FROM casos")
