@@ -44,7 +44,19 @@ def get_db():
 
 def get_padron_db():
     if not os.path.exists(PADRON_DB_PATH):
-        return None
+        partes = sorted(glob.glob(PADRON_DB_PATH + ".part*"))
+        if partes:
+            try:
+                with open(PADRON_DB_PATH, "wb") as f_out:
+                    for p in partes:
+                        with open(p, "rb") as f_in:
+                            f_out.write(f_in.read())
+                print(f"Padron de postes auto-reensamblado con exito desde {len(partes)} partes.")
+            except Exception as e:
+                print("Error reensamblando padron de postes:", e)
+                return None
+        else:
+            return None
     try:
         conn = sqlite3.connect(f"file:{PADRON_DB_PATH}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
