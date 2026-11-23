@@ -798,6 +798,36 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.close()
             self.send_json(res)
 
+        # Validar si poste o medidor existen exactamente en el padrón (Requisito estricto CAT)
+        elif path == "/api/validar_poste":
+            ubt = (query.get("ubt", [""])[0] or "").strip().upper()
+            medidor = (query.get("medidor", [""])[0] or "").strip()
+            valido = False
+            ubt_encontrada = ""
+            medidor_encontrado = ""
+            pconn = get_padron_db()
+            if pconn:
+                try:
+                    pcur = pconn.cursor()
+                    if ubt:
+                        r = pcur.execute("SELECT ubt, medidor FROM padron_postes WHERE ubt = ? LIMIT 1", (ubt,)).fetchone()
+                        if r:
+                            valido = True
+                            ubt_encontrada = r["ubt"]
+                            medidor_encontrado = r["medidor"]
+                    if not valido and medidor:
+                        r = pcur.execute("SELECT ubt, medidor FROM padron_postes WHERE medidor = ? LIMIT 1", (medidor,)).fetchone()
+                        if r:
+                            valido = True
+                            ubt_encontrada = r["ubt"]
+                            medidor_encontrado = r["medidor"]
+                    pconn.close()
+                except Exception as e:
+                    valido = False
+            conn.close()
+            self.send_json({"valido": valido, "ubt": ubt_encontrada, "medidor": medidor_encontrado})
+            return
+
         # Exportar Consecutivos en Línea a Excel (Descarga directa y marca impresos)
         elif path == "/api/export_consecutivos_linea":
             import io
@@ -1280,6 +1310,36 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             op_row = cur.execute("SELECT nombre FROM operadores WHERE id = ?", (op_id,)).fetchone()
             op_nombre_real = op_row[0] if op_row else f"OP_{op_id}"
             warnings_total = []
+
+            # Validación estricta CAT: Si se solicita crear Consecutivo en Línea, el poste o medidor DEBE coincidir con el padrón
+            for cu in cases_updates:
+                c_cons = int(cu.get("consecutivo_linea", 0))
+                if c_cons == 1:
+                    p_conf = (cu.get("poste_confirmado") or "").strip().upper()
+                    m_conf = (cu.get("numero_medidor") or "").strip()
+                    pconn = get_padron_db()
+                    valido = False
+                    if pconn:
+                        try:
+                            pcur = pconn.cursor()
+                            if p_conf:
+                                r = pcur.execute("SELECT 1 FROM padron_postes WHERE ubt = ? LIMIT 1", (p_conf,)).fetchone()
+                                if r:
+                                    valido = True
+                            if not valido and m_conf:
+                                r = pcur.execute("SELECT 1 FROM padron_postes WHERE medidor = ? LIMIT 1", (m_conf,)).fetchone()
+                                if r:
+                                    valido = True
+                            pconn.close()
+                        except Exception as e:
+                            valido = False
+                    if not valido:
+                        conn.close()
+                        self.send_json({
+                            "success": False,
+                            "error": f"BLOQUEO CAT: El poste '{p_conf}' o medidor '{m_conf}' NO existe en el Padrón oficial. El operador del CAT no podrá generar el consecutivo sin un registro válido. Seleccione un poste/medidor del predictivo o desactive el Consecutivo."
+                        }, status=400)
+                        return
 
             for cu in cases_updates:
                 c_id = cu.get("id")
