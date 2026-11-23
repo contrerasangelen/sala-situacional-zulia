@@ -729,7 +729,7 @@
         }
 
         // MOTOR DE VALIDACIÓN Y CONTROL DE CALIDAD EN EL CLIENTE
-        function validateAndSaveCall() {
+        async function validateAndSaveCall() {
             const updates = [];
             let clientSideWarnings = [];
 
@@ -760,7 +760,7 @@
                 const consecutivoEl = document.getElementById(`case-consecutivo-${c.id}`);
                 const consecutivoVal = (consecutivoEl && consecutivoEl.checked) ? 1 : 0;
 
-                // VALIDACIÓN OBLIGATORIA: Si activa Consecutivo en Línea, DEBE tener Poste o Medidor
+                // VALIDACIÓN OBLIGATORIA ESTRICTA CAT: Si activa Consecutivo en Línea, DEBE existir en el Padrón oficial
                 if (consecutivoVal === 1) {
                     const tienePoste = (poste && poste.trim().length > 0);
                     const tieneMedidor = (medidor && medidor.trim().length > 0);
@@ -771,6 +771,22 @@
                             posteEl.classList.add('ring-2', 'ring-rose-500');
                         }
                         return;
+                    }
+
+                    // Chequeo estricto contra el padrón oficial (Requisito CAT)
+                    try {
+                        const checkRes = await fetch(`/api/validar_poste?ubt=${encodeURIComponent((poste || '').trim())}&medidor=${encodeURIComponent((medidor || '').trim())}`);
+                        const checkData = await checkRes.json();
+                        if (!checkData.valido) {
+                            alert(`⛔ BLOQUEO PARA CONSECUTIVO EN LÍNEA (CAT):\n\nEl poste "${(poste || '').trim()}" o medidor "${(medidor || '').trim()}" NO existe en el Padrón oficial.\n\nEl operador del CAT NO podrá generar el consecutivo sin que el registro concuerde exactamente en el sistema.\n\nAcción requerida:\n• Selecciona un poste/medidor válido de la lista predictiva, o\n• Si el poste no existe, desactiva la opción "Crear Consecutivo en Línea".`);
+                            if (posteEl) {
+                                posteEl.focus();
+                                posteEl.classList.add('ring-2', 'ring-rose-500');
+                            }
+                            return;
+                        }
+                    } catch(err) {
+                        console.error("Error al validar contra el padrón:", err);
                     }
                 }
 
