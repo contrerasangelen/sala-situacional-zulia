@@ -654,15 +654,27 @@
                         </div>
                     </div>
 
-                    <!-- Observaciones y poste confirmado -->
-                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
-                        <div class="sm:col-span-3">
+                    <!-- Observaciones, Poste y Medidor con Autocompletado Predictivo -->
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1">
+                        <div class="sm:col-span-6">
                             <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Observaciones de la Llamada / Testimonio</label>
-                            <input id="case-obs-${c.id}" type="text" value="${c.observaciones || ''}" placeholder="Ej. Se volvió a contactar al usuario..." class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
+                            <input id="case-obs-${c.id}" type="text" value="${c.observaciones || ''}" placeholder="Ej. Se contactó al usuario..." class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
                         </div>
-                        <div>
-                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Poste Confirmado</label>
-                            <input id="case-poste-${c.id}" type="text" value="${c.poste_confirmado || ''}" placeholder="Ej. P06N15" class="w-full bg-slate-800 text-xs text-white border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 uppercase">
+                        <div class="sm:col-span-3 relative">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] font-bold uppercase text-slate-400">Poste / UBT</label>
+                                <span class="text-[9px] text-cyan-400 font-bold">Predictivo ⚡</span>
+                            </div>
+                            <input id="case-poste-${c.id}" type="text" value="${c.poste_confirmado || ''}" placeholder="Ej. L14B11" oninput="buscarPostePredictivo(${c.id}, this.value)" autocomplete="off" class="w-full bg-slate-800 text-xs text-cyan-300 font-bold border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-cyan-500 uppercase font-mono">
+                            <div id="dropdown-poste-${c.id}" class="hidden absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-cyan-500/60 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-800 text-left"></div>
+                        </div>
+                        <div class="sm:col-span-3 relative">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] font-bold uppercase text-slate-400">N° Medidor</label>
+                                <span class="text-[9px] text-amber-400 font-bold">Predictivo ⚡</span>
+                            </div>
+                            <input id="case-medidor-${c.id}" type="text" value="${c.numero_medidor || ''}" placeholder="Ej. 909051" oninput="buscarMedidorPredictivo(${c.id}, this.value)" autocomplete="off" class="w-full bg-slate-800 text-xs text-amber-300 font-bold border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-amber-500 font-mono">
+                            <div id="dropdown-medidor-${c.id}" class="hidden absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-amber-500/60 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-800 text-left"></div>
                         </div>
                     </div>
 
@@ -730,6 +742,7 @@
                 let reqEl = document.getElementById(`case-campo-${c.id}`);
                 let obsEl = document.getElementById(`case-obs-${c.id}`);
                 let posteEl = document.getElementById(`case-poste-${c.id}`);
+                let medidorEl = document.getElementById(`case-medidor-${c.id}`);
 
                 // Si estaba previamente aprobado y no está en el formulario, preservar valores existentes
                 let est = estEl ? estEl.value : c.estatus_llamada;
@@ -737,10 +750,28 @@
                 let req = reqEl ? reqEl.value : c.requiere_campo;
                 let obs = obsEl ? obsEl.value : (c.observaciones || '');
                 let poste = posteEl ? posteEl.value : (c.poste_confirmado || '');
+                let medidor = medidorEl ? medidorEl.value : (c.numero_medidor || '');
 
                 if (!est && !isPreviamenteAprobado) {
                     alert(`Por favor selecciona el Estatus de Llamada para el caso devuelto / pendiente ${c.codigo_caso}.`);
                     return;
+                }
+
+                const consecutivoEl = document.getElementById(`case-consecutivo-${c.id}`);
+                const consecutivoVal = (consecutivoEl && consecutivoEl.checked) ? 1 : 0;
+
+                // VALIDACIÓN OBLIGATORIA: Si activa Consecutivo en Línea, DEBE tener Poste o Medidor
+                if (consecutivoVal === 1) {
+                    const tienePoste = (poste && poste.trim().length > 0);
+                    const tieneMedidor = (medidor && medidor.trim().length > 0);
+                    if (!tienePoste && !tieneMedidor) {
+                        alert(`⚠️ Para generar un Consecutivo en Línea en el caso ${c.codigo_caso} es OBLIGATORIO ingresar el Número de Poste/UBT o el Número de Medidor.`);
+                        if (posteEl) {
+                            posteEl.focus();
+                            posteEl.classList.add('ring-2', 'ring-rose-500');
+                        }
+                        return;
+                    }
                 }
 
                 // Chequeo de la regla de coherencia solicitada:
@@ -765,9 +796,6 @@
                     clientSideWarnings.push(`Caso ${c.codigo_caso}: Indicaste que la avería NO persiste pero marcaste que SÍ requiere cuadrilla en campo.`);
                 }
 
-                const consecutivoEl = document.getElementById(`case-consecutivo-${c.id}`);
-                const consecutivoVal = (consecutivoEl && consecutivoEl.checked) ? 1 : 0;
-
                 updates.push({
                     id: c.id,
                     codigo_caso: c.codigo_caso,
@@ -777,6 +805,7 @@
                     requiere_campo: req,
                     observaciones: obs,
                     poste_confirmado: poste,
+                    numero_medidor: medidor,
                     consecutivo_linea: consecutivoVal
                 });
             }
@@ -983,6 +1012,110 @@
                 alert("Error de conexión: " + e);
             }
         }
+
+        // BÚSQUEDA PREDICTIVA DE POSTE Y MEDIDOR EN TIEMPO REAL
+        let debounceTimerPoste = null;
+        let debounceTimerMedidor = null;
+
+        function buscarPostePredictivo(casoId, val) {
+            clearTimeout(debounceTimerPoste);
+            const drop = document.getElementById(`dropdown-poste-${casoId}`);
+            if (!drop) return;
+            const clean = val.trim().toUpperCase();
+            
+            // Si escribe al menos una letra, dos números y la segunda letra (ej: L14B -> 4 caracteres)
+            if (clean.length < 4) {
+                drop.innerHTML = '';
+                drop.classList.add('hidden');
+                return;
+            }
+
+            debounceTimerPoste = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/buscar_postes?q=${encodeURIComponent(clean)}`);
+                    const data = await res.json();
+                    if (!data || data.length === 0) {
+                        drop.innerHTML = '<div class="p-2 text-[11px] text-slate-500 italic">No se hallaron postes con esa coincidencia</div>';
+                        drop.classList.remove('hidden');
+                        return;
+                    }
+                    drop.innerHTML = data.map(item => `
+                        <div onclick="seleccionarPosteMedidor(${casoId}, '${item.ubt || ''}', '${item.medidor || ''}')" class="p-2.5 hover:bg-slate-800/90 cursor-pointer transition">
+                            <div class="flex items-center justify-between">
+                                <span class="font-mono font-bold text-cyan-300 text-xs">⚡ ${item.ubt}</span>
+                                <span class="font-mono text-amber-300 text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Med: ${item.medidor || 'S/M'}</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mt-0.5 truncate">
+                                ${item.suscriptor ? item.suscriptor + ' - ' : ''}${item.sector || item.calle || ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    drop.classList.remove('hidden');
+                } catch(e) {
+                    console.error("Error buscando poste:", e);
+                }
+            }, 250);
+        }
+
+        function buscarMedidorPredictivo(casoId, val) {
+            clearTimeout(debounceTimerMedidor);
+            const drop = document.getElementById(`dropdown-medidor-${casoId}`);
+            if (!drop) return;
+            const clean = val.trim();
+            
+            if (clean.length < 4) {
+                drop.innerHTML = '';
+                drop.classList.add('hidden');
+                return;
+            }
+
+            debounceTimerMedidor = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/buscar_postes?q=${encodeURIComponent(clean)}`);
+                    const data = await res.json();
+                    if (!data || data.length === 0) {
+                        drop.innerHTML = '<div class="p-2 text-[11px] text-slate-500 italic">No se hallaron medidores con esa coincidencia</div>';
+                        drop.classList.remove('hidden');
+                        return;
+                    }
+                    drop.innerHTML = data.map(item => `
+                        <div onclick="seleccionarPosteMedidor(${casoId}, '${item.ubt || ''}', '${item.medidor || ''}')" class="p-2.5 hover:bg-slate-800/90 cursor-pointer transition">
+                            <div class="flex items-center justify-between">
+                                <span class="font-mono font-bold text-amber-300 text-xs">📟 Med: ${item.medidor}</span>
+                                <span class="font-mono text-cyan-300 text-[10px] bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">Poste: ${item.ubt || 'S/P'}</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mt-0.5 truncate">
+                                ${item.suscriptor ? item.suscriptor + ' - ' : ''}${item.sector || item.calle || ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    drop.classList.remove('hidden');
+                } catch(e) {
+                    console.error("Error buscando medidor:", e);
+                }
+            }, 250);
+        }
+
+        function seleccionarPosteMedidor(casoId, ubt, medidor) {
+            const pEl = document.getElementById(`case-poste-${casoId}`);
+            const mEl = document.getElementById(`case-medidor-${casoId}`);
+            if (pEl && ubt) pEl.value = ubt;
+            if (mEl && medidor) mEl.value = medidor;
+
+            const dropP = document.getElementById(`dropdown-poste-${casoId}`);
+            const dropM = document.getElementById(`dropdown-medidor-${casoId}`);
+            if (dropP) { dropP.innerHTML = ''; dropP.classList.add('hidden'); }
+            if (dropM) { dropM.innerHTML = ''; dropM.classList.add('hidden'); }
+        }
+
+        // Cerrar dropdowns si se hace clic fuera
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('[id^="dropdown-"]') && !e.target.closest('[id^="case-poste-"]') && !e.target.closest('[id^="case-medidor-"]')) {
+                document.querySelectorAll('[id^="dropdown-poste-"], [id^="dropdown-medidor-"]').forEach(el => {
+                    el.classList.add('hidden');
+                });
+            }
+        });
     </script>
 </body>
 </html>
