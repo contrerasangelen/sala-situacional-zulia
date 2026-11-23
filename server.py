@@ -30,6 +30,7 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DB_PATH = os.environ.get("SALA_DB", os.path.join(BASE_DIR, "sala_situacional.db"))
+PADRON_DB_PATH = os.environ.get("PADRON_DB", os.path.join(BASE_DIR, "padron_postes.db"))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 WORKSPACE_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -40,6 +41,16 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def get_padron_db():
+    if not os.path.exists(PADRON_DB_PATH):
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{PADRON_DB_PATH}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception:
+        return None
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "contrerasangelen/sala-situacional-zulia").strip()
@@ -227,6 +238,8 @@ def init_db_schema():
 
         if "operador_nombre" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN operador_nombre TEXT")
+        if "numero_medidor" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN numero_medidor TEXT")
         if "desestimado_verificado" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN desestimado_verificado INTEGER DEFAULT 0")
         if "desestimado_improcedente_flag" not in cols:
@@ -738,6 +751,41 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.close()
             self.send_json({"pendientes": p, "total": tot})
 
+        # Buscar postes o medidores predictivos en el padrón
+        elif path == "/api/buscar_postes":
+            q = (query.get("q", [""])[0] or "").strip().upper()
+            if len(q) < 3:
+                conn.close()
+                self.send_json([])
+                return
+            pconn = get_padron_db()
+            if not pconn:
+                conn.close()
+                self.send_json([])
+                return
+            try:
+                pcur = pconn.cursor()
+                if q[0].isdigit():
+                    pcur.execute("""
+                        SELECT DISTINCT ubt, medidor, suscriptor, sector, calle, cuenta
+                        FROM padron_postes
+                        WHERE medidor LIKE ?
+                        LIMIT 15
+                    """, (f"{q}%",))
+                else:
+                    pcur.execute("""
+                        SELECT DISTINCT ubt, medidor, suscriptor, sector, calle, cuenta
+                        FROM padron_postes
+                        WHERE ubt LIKE ?
+                        LIMIT 15
+                    """, (f"{q}%",))
+                res = [dict(r) for r in pcur.fetchall()]
+                pconn.close()
+            except Exception as e:
+                res = []
+            conn.close()
+            self.send_json(res)
+
         # Exportar Consecutivos en Línea a Excel (Descarga directa y marca impresos)
         elif path == "/api/export_consecutivos_linea":
             import io
@@ -766,7 +814,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
             headers = [
                 "N°", "ID_CASO", "CÓDIGO CASO", "OPERADOR", "MUNICIPIO", "PARROQUIA",
-                "SECTOR", "DIRECCIÓN", "POSTE CONFIRMADO", "POSTE DETECTADO",
+                "SECTOR", "DIRECCIÓN", "POSTE CONFIRMADO", "POSTE DETECTADO", "N° MEDIDOR",
                 "DENUNCIANTE", "CÉDULA", "TELÉFONO 1", "TELÉFONO 2",
                 "ESTATUS LLAMADA", "¿PERSISTE?", "REQUIERE CAMPO", "FECHA CONTACTO",
                 "CATEGORÍA", "OBSERVACIÓN DETALLADA / NOVEDAD", "FECHA DESPACHO"
@@ -795,6 +843,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                     r["direccion"],
                     r["poste_confirmado"] or "",
                     r["poste_detectado"] or "",
+                    r["numero_medidor"] or "",
                     r["denunciante"],
                     r["cedula"],
                     r["telefono_1"],
@@ -1227,6 +1276,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 campo = cu.get("requiere_campo")
                 obs = cu.get("observaciones", "")
                 poste_conf = cu.get("poste_confirmado", "")
+                medidor_conf = (cu.get("numero_medidor") or "").strip()
                 cat_hom = cu.get("categoria_homologada", "")
 
                 warns = audit_case_coherence(cat_hom, est, persiste, campo, obs)
@@ -1242,6 +1292,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                     fecha_contacto = ?,
                     observaciones = ?,
                     poste_confirmado = ?,
+                    numero_medidor = ?,
                     estado_auditoria = 'GESTIONADO',
                     inconsistencia_flag = ?,
                     inconsistencia_motivo = ?,
@@ -1250,7 +1301,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                     operador_nombre = ?,
                     actualizado_en = ?
                 WHERE id = ? AND operador_id = ?
-                """, (est, persiste, campo, now_str[:10], obs, poste_conf, incons_flag, incons_motivo, consecutivo_val, op_nombre_real, now_str, c_id, op_id))
+                """, (est, persiste, campo, now_str[:10], obs, poste_conf, medidor_conf, incons_flag, incons_motivo, consecutivo_val, op_nombre_real, now_str, c_id, op_id))
 
                 if warns:
                     warnings_total.extend(warns)
@@ -1280,6 +1331,40 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             """, (motivo, caso_id))
             cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'CASO_DEVUELTO', ?)",
                         (f"Supervisor devolvió caso #{caso_id} por: {motivo}",))
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True})
+
+        # Devolver caso de consecutivo al operario
+        elif path == "/api/supervisor/devolver_consecutivo":
+            caso_id = data.get("caso_id")
+            motivo = (data.get("motivo") or "").strip()
+            if not motivo:
+                motivo = "Supervisor devolvió caso: Verificar o corregir datos de poste o medidor para consecutivo"
+            cur.execute("""
+            UPDATE casos SET 
+                consecutivo_linea = 0,
+                devuelto_flag = 1,
+                devuelto_motivo = ?,
+                estado_auditoria = 'DEVUELTO_CORRECCION'
+            WHERE id = ?
+            """, (motivo, caso_id))
+            cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'CONSECUTIVO_DEVUELTO', ?)",
+                        (f"Supervisor devolvió caso #{caso_id} de consecutivos al operador por: {motivo}",))
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True})
+
+        # Excluir caso del formato de consecutivos (sin desestimar caso)
+        elif path == "/api/supervisor/excluir_consecutivo":
+            caso_id = data.get("caso_id")
+            cur.execute("""
+            UPDATE casos SET 
+                consecutivo_linea = 0
+            WHERE id = ?
+            """, (caso_id,))
+            cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'CONSECUTIVO_EXCLUIDO', ?)",
+                        (f"Supervisor excluyó caso #{caso_id} del formato de consecutivos de campo",))
             conn.commit()
             conn.close()
             self.send_json({"success": True})

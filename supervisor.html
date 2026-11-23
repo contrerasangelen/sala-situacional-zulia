@@ -313,13 +313,15 @@
                             <th class="p-3">Teléfonos</th>
                             <th class="p-3">Ubicación (Parroquia / Sector)</th>
                             <th class="p-3">Poste</th>
+                            <th class="p-3">Medidor</th>
                             <th class="p-3">Novedad / Observación</th>
                             <th class="p-3 text-center">Estado Despacho</th>
+                            <th class="p-3 text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="consecutivos-table-body" class="divide-y divide-slate-800/60 font-medium">
                         <tr>
-                            <td colspan="8" class="p-8 text-center text-xs text-slate-500">Cargando casos de consecutivos...</td>
+                            <td colspan="10" class="p-8 text-center text-xs text-slate-500">Cargando casos de consecutivos...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1402,7 +1404,7 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                 if (data.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="8" class="p-8 text-center text-xs text-slate-400 font-medium">
+                            <td colspan="10" class="p-8 text-center text-xs text-slate-400 font-medium">
                                 No hay casos marcados para consecutivo en línea o Pegasus.
                             </td>
                         </tr>
@@ -1427,6 +1429,7 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                             <span class="text-[10px] text-slate-400">${r.sector || ''} - ${r.direccion || ''}</span>
                         </td>
                         <td class="p-3 font-mono text-[11px] text-cyan-300 font-bold whitespace-nowrap">${r.poste_confirmado || r.poste_detectado || '-'}</td>
+                        <td class="p-3 font-mono text-[11px] text-amber-300 font-bold whitespace-nowrap">${r.numero_medidor || '-'}</td>
                         <td class="p-3 italic text-amber-300 font-bold max-w-xs text-[11px]">
                             "${r.observaciones || '-'}"
                         </td>
@@ -1435,11 +1438,63 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                                 ${isDespachado ? '✔️ Despachado' : '⏳ Pendiente'}
                             </span>
                         </td>
+                        <td class="p-3 text-center whitespace-nowrap">
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="devolverConsecutivoAlOperador(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-600/30 hover:bg-amber-500 text-amber-200 hover:text-slate-950 border border-amber-500/40 transition flex items-center gap-1 shadow" title="Devolver al operario para corrección de datos">
+                                    ↩️ Devolver
+                                </button>
+                                <button onclick="excluirDeConsecutivos(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-600/30 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-500/40 transition flex items-center gap-1 shadow" title="Excluir del formato de campo (sin desestimar llamada)">
+                                    🚫 Excluir
+                                </button>
+                            </div>
+                        </td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (e) {
                 console.error("Error cargando tabla de consecutivos:", e);
+            }
+        }
+
+        async function devolverConsecutivoAlOperador(casoId, codigoCaso) {
+            const motivo = prompt(`Devolver caso ${codigoCaso} al operador:\nIndica el motivo o datos a verificar (ej. Corregir número de poste o medidor):`, "Verificar datos de poste y medidor para consecutivo");
+            if (motivo === null) return;
+            try {
+                const res = await fetch('/api/supervisor/devolver_consecutivo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({caso_id: casoId, motivo: motivo})
+                });
+                const d = await res.json();
+                if (d.success) {
+                    alert(`Caso ${codigoCaso} devuelto al operador para corrección.`);
+                    loadConsecutivosTable();
+                    updateConsecutivosBadge();
+                } else {
+                    alert("Error devolviendo caso: " + (d.error || 'Error desconocido'));
+                }
+            } catch(e) {
+                alert("Error de conexión al servidor");
+            }
+        }
+
+        async function excluirDeConsecutivos(casoId, codigoCaso) {
+            if (!confirm(`¿Deseas excluir el caso ${codigoCaso} del formato de Consecutivos / Pegasus?\n\nEl caso se mantendrá guardado y gestionado con su usuario, pero NO saldrá en el listado para cuadrilla de campo.`)) return;
+            try {
+                const res = await fetch('/api/supervisor/excluir_consecutivo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({caso_id: casoId})
+                });
+                const d = await res.json();
+                if (d.success) {
+                    loadConsecutivosTable();
+                    updateConsecutivosBadge();
+                } else {
+                    alert("Error excluyendo caso: " + (d.error || 'Error desconocido'));
+                }
+            } catch(e) {
+                alert("Error de conexión al servidor");
             }
         }
 
