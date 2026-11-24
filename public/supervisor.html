@@ -292,13 +292,54 @@
                         <span>Casos para Consecutivos de Campo y Reportes Pegasus</span>
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">
-                        Casos donde el operador o el testimonio detectó avería activa que requiere generación de consecutivo o reporte Pegasus en campo.
+                        Casos donde el operador o el testimonio detectó avería activa. Revisa y aprueba con <strong>✅ Aceptar</strong> antes de generar el Excel de despacho.
                     </p>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="descargarConsecutivosLinea()" class="px-4 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow flex items-center gap-1.5 transition">
-                        📥 Descargar Excel para Campo
+                <div class="flex flex-wrap gap-2 items-center">
+                    <button onclick="aprobarTodosConsecutivos()" class="px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-1.5 transition">
+                        ✅ Aprobar Todos los Pendientes
                     </button>
+                    <button onclick="descargarConsecutivosLinea('aprobados')" class="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow flex items-center gap-1.5 transition">
+                        📥 Descargar Aprobados (<span id="btn-count-aprobados">0</span>)
+                    </button>
+                    <button onclick="descargarConsecutivosLinea('hoy')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow flex items-center gap-1.5 transition">
+                        📅 Descargar Todos los de Hoy
+                    </button>
+                    <button onclick="descargarConsecutivosLinea('todos')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow flex items-center gap-1.5 transition">
+                        📂 Histórico Completo
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mini Tarjetas de Resumen de Consecutivos -->
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold text-amber-400 uppercase">⏳ Por Revisar</span>
+                        <div id="badge-cons-pendientes" class="text-xl font-black text-amber-400">0</div>
+                    </div>
+                    <span class="text-2xl">⏳</span>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold text-blue-400 uppercase">👍 Listos / Aprobados</span>
+                        <div id="badge-cons-aprobados" class="text-xl font-black text-blue-400">0</div>
+                    </div>
+                    <span class="text-2xl">✅</span>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold text-emerald-400 uppercase">✔️ Despachados</span>
+                        <div id="badge-cons-despachados" class="text-xl font-black text-emerald-400">0</div>
+                    </div>
+                    <span class="text-2xl">📦</span>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold text-slate-400 uppercase">Total Reportados</span>
+                        <div id="badge-cons-total" class="text-xl font-black text-white">0</div>
+                    </div>
+                    <span class="text-2xl">⚡</span>
                 </div>
             </div>
 
@@ -523,44 +564,62 @@
         }
 
         
-        function descargarConsecutivosLinea() {
-            window.location.href = '/api/export_consecutivos_linea?tipo=pendientes';
+        window.consecutivosAprobadosCount = 0;
+
+        function descargarConsecutivosLinea(tipo = 'aprobados') {
+            if (tipo === 'aprobados' || tipo === 'pendientes') {
+                if (window.consecutivosAprobadosCount <= 0) {
+                    alert('⚠️ No hay casos aprobados para descargar.\n\nPor favor revisa la lista abajo y haz clic en el botón verde "✅ Aceptar" en los casos que estén listos antes de descargar.');
+                    return;
+                }
+                if (!confirm(`¿Deseas descargar los ${window.consecutivosAprobadosCount} casos aprobados para cuadrilla?\n\nAl descargar el Excel, quedarán registrados como "Despachados" para evitar duplicados en campo.`)) {
+                    return;
+                }
+            }
+            const a = document.createElement('a');
+            a.href = `/api/export_consecutivos_linea?tipo=${tipo}&_t=${Date.now()}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
             setTimeout(loadDashboardData, 2000);
+            setTimeout(loadConsecutivosTable, 2000);
+            setTimeout(updateConsecutivosBadge, 2500);
         }
 
         async function updateConsecutivosBadges() {
             try {
                 const res = await fetch('/api/consecutivos_pendientes_count');
                 const data = await res.json();
-                const p = (data.pendientes !== undefined) ? data.pendientes : (data.total || 0);
+                const p = Number(data.pendientes || 0);
+                const aprob = Number(data.aprobados || 0);
+                const desp = Number(data.despachados || 0);
+                const tot = Number(data.total || 0);
+
+                window.consecutivosAprobadosCount = aprob;
+
                 const bh = document.getElementById('badge-consecutivos-header');
-                if (bh) bh.innerText = p;
+                if (bh) bh.innerText = p + aprob;
                 const bt = document.getElementById('badge-consecutivos-tab');
-                if (bt) bt.innerText = p;
+                if (bt) bt.innerText = p + aprob;
+
+                const btnAprob = document.getElementById('btn-count-aprobados');
+                if (btnAprob) btnAprob.innerText = aprob;
+
+                const bPend = document.getElementById('badge-cons-pendientes');
+                if (bPend) bPend.innerText = p;
+                const bAprob = document.getElementById('badge-cons-aprobados');
+                if (bAprob) bAprob.innerText = aprob;
+                const bDesp = document.getElementById('badge-cons-despachados');
+                if (bDesp) bDesp.innerText = desp;
+                const bTot = document.getElementById('badge-cons-total');
+                if (bTot) bTot.innerText = tot;
             } catch(e) {
                 console.warn('Error loading consecutivos count', e);
             }
         }
 
-        
         async function updateConsecutivosBadge() {
-            try {
-                const res = await fetch('/api/consecutivos_pendientes_count');
-                const data = await res.json();
-                const p = (data.pendientes !== undefined) ? data.pendientes : (data.total || 0);
-                const bh = document.getElementById('badge-consecutivos-header');
-                if (bh) bh.innerText = p;
-                const bt = document.getElementById('badge-consecutivos-tab');
-                if (bt) bt.innerText = p;
-            } catch (e) {
-                console.warn('Error cargando contador de consecutivos:', e);
-            }
-        }
-        
-
-        function descargarConsecutivosLinea() {
-            window.location.href = '/api/export_consecutivos_linea?tipo=pendientes';
-            setTimeout(loadDashboardData, 2000);
+            return updateConsecutivosBadges();
         }
 
         async function loadDashboardData() {
@@ -1360,8 +1419,8 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
         }
 
         loadDashboardData();
-            updateConsecutivosBadge();
-        setInterval(loadDashboardData, 6000);
+        updateConsecutivosBadge();
+        setInterval(loadDashboardData, 12000);
 
         async function devolverDesestimado(casoId, codigo) {
             await reabrirCaso(casoId, codigo);
@@ -1397,9 +1456,25 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                 if (!tbody) return;
                 tbody.innerHTML = '';
 
-                const pendientes = data.filter(d => !d.consecutivo_impreso || d.consecutivo_impreso == 0).length;
+                const pendientes = data.filter(d => (!d.consecutivo_impreso || d.consecutivo_impreso == 0) && (!d.consecutivo_aprobado || d.consecutivo_aprobado == 0)).length;
+                const aprobados = data.filter(d => (!d.consecutivo_impreso || d.consecutivo_impreso == 0) && d.consecutivo_aprobado == 1).length;
+                const despachados = data.filter(d => d.consecutivo_impreso == 1).length;
+
+                window.consecutivosAprobadosCount = aprobados;
+
                 const badge = document.getElementById('badge-consecutivos-tab');
-                if (badge) badge.innerText = pendientes;
+                if (badge) badge.innerText = pendientes + aprobados;
+                const btnAprob = document.getElementById('btn-count-aprobados');
+                if (btnAprob) btnAprob.innerText = aprobados;
+
+                const bPend = document.getElementById('badge-cons-pendientes');
+                if (bPend) bPend.innerText = pendientes;
+                const bAprob = document.getElementById('badge-cons-aprobados');
+                if (bAprob) bAprob.innerText = aprobados;
+                const bDesp = document.getElementById('badge-cons-despachados');
+                if (bDesp) bDesp.innerText = despachados;
+                const bTot = document.getElementById('badge-cons-total');
+                if (bTot) bTot.innerText = data.length;
 
                 if (data.length === 0) {
                     tbody.innerHTML = `
@@ -1416,6 +1491,52 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                     const tr = document.createElement('tr');
                     tr.className = "hover:bg-slate-800/40 transition";
                     const isDespachado = r.consecutivo_impreso == 1;
+                    const isAprobado = r.consecutivo_aprobado == 1 && !isDespachado;
+                    const isPendiente = !isAprobado && !isDespachado;
+
+                    let statusBadge = '';
+                    if (isDespachado) {
+                        const hDesp = r.consecutivo_fecha_impresion ? r.consecutivo_fecha_impresion.split(' ')[1] : '';
+                        statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">✔️ Despachado ${hDesp}</span>`;
+                    } else if (isAprobado) {
+                        statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/30">👍 Aprobado / Listo</span>`;
+                    } else {
+                        statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">⏳ Pendiente Revisión</span>`;
+                    }
+
+                    let actionBtns = '';
+                    if (isDespachado) {
+                        actionBtns = `<span class="text-[10px] text-slate-500 font-semibold italic">Ya Despachado</span>`;
+                    } else if (isAprobado) {
+                        actionBtns = `
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="revertirAprobacionConsecutivo(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 transition flex items-center gap-1 shadow" title="Quitar aprobación y volver a pendiente">
+                                    ⏪ Revertir
+                                </button>
+                                <button onclick="devolverConsecutivoAlOperador(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-600/30 hover:bg-amber-500 text-amber-200 hover:text-slate-950 border border-amber-500/40 transition flex items-center gap-1 shadow" title="Devolver al operario para corrección de datos">
+                                    ↩️ Devolver
+                                </button>
+                                <button onclick="excluirDeConsecutivos(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-600/30 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-500/40 transition flex items-center gap-1 shadow" title="Excluir del formato de campo">
+                                    🚫 Excluir
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        actionBtns = `
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="aprobarConsecutivo(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 shadow transition flex items-center gap-1" title="Aprobar para generar consecutivo de campo">
+                                    ✅ Aceptar
+                                </button>
+                                <button onclick="devolverConsecutivoAlOperador(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-600/30 hover:bg-amber-500 text-amber-200 hover:text-slate-950 border border-amber-500/40 transition flex items-center gap-1 shadow" title="Devolver al operario para corrección de datos">
+                                    ↩️ Devolver
+                                </button>
+                                <button onclick="excluirDeConsecutivos(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-600/30 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-500/40 transition flex items-center gap-1 shadow" title="Excluir del formato de campo">
+                                    🚫 Excluir
+                                </button>
+                            </div>
+                        `;
+                    }
+
                     tr.innerHTML = `
                         <td class="p-3 font-mono font-bold text-amber-400 whitespace-nowrap">${r.codigo_caso}</td>
                         <td class="p-3 font-bold text-white whitespace-nowrap">${r.operador_nombre || '-'}</td>
@@ -1434,25 +1555,75 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                             "${r.observaciones || '-'}"
                         </td>
                         <td class="p-3 text-center whitespace-nowrap">
-                            <span class="px-2.5 py-1 rounded-full text-[10px] font-black ${isDespachado ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'}">
-                                ${isDespachado ? '✔️ Despachado' : '⏳ Pendiente'}
-                            </span>
+                            ${statusBadge}
                         </td>
                         <td class="p-3 text-center whitespace-nowrap">
-                            <div class="flex items-center justify-center gap-1.5">
-                                <button onclick="devolverConsecutivoAlOperador(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-600/30 hover:bg-amber-500 text-amber-200 hover:text-slate-950 border border-amber-500/40 transition flex items-center gap-1 shadow" title="Devolver al operario para corrección de datos">
-                                    ↩️ Devolver
-                                </button>
-                                <button onclick="excluirDeConsecutivos(${r.id}, '${r.codigo_caso}')" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-600/30 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-500/40 transition flex items-center gap-1 shadow" title="Excluir del formato de campo (sin desestimar llamada)">
-                                    🚫 Excluir
-                                </button>
-                            </div>
+                            ${actionBtns}
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (e) {
                 console.error("Error cargando tabla de consecutivos:", e);
+            }
+        }
+
+        async function aprobarConsecutivo(casoId, codigoCaso) {
+            try {
+                const res = await fetch('/api/supervisor/aprobar_consecutivo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({caso_id: casoId})
+                });
+                const d = await res.json();
+                if (d.success) {
+                    loadConsecutivosTable();
+                    updateConsecutivosBadge();
+                } else {
+                    alert("Error aprobando caso: " + (d.error || 'Error desconocido'));
+                }
+            } catch(e) {
+                alert("Error de conexión al servidor");
+            }
+        }
+
+        async function revertirAprobacionConsecutivo(casoId, codigoCaso) {
+            try {
+                const res = await fetch('/api/supervisor/revertir_consecutivo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({caso_id: casoId})
+                });
+                const d = await res.json();
+                if (d.success) {
+                    loadConsecutivosTable();
+                    updateConsecutivosBadge();
+                } else {
+                    alert("Error revirtiendo caso: " + (d.error || 'Error desconocido'));
+                }
+            } catch(e) {
+                alert("Error de conexión al servidor");
+            }
+        }
+
+        async function aprobarTodosConsecutivos() {
+            if (!confirm("¿Deseas APROBAR todos los casos pendientes de revisión para generar consecutivo de campo?")) return;
+            try {
+                const res = await fetch('/api/supervisor/aprobar_todos_consecutivos', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const d = await res.json();
+                if (d.success) {
+                    alert(`Se aprobaron exitosamente ${d.count || 0} casos.`);
+                    loadConsecutivosTable();
+                    updateConsecutivosBadge();
+                } else {
+                    alert("Error aprobando casos: " + (d.error || 'Error desconocido'));
+                }
+            } catch(e) {
+                alert("Error de conexión al servidor");
             }
         }
 
