@@ -37,28 +37,38 @@ WORKSPACE_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
 if not os.path.exists(WORKSPACE_DIR):
     WORKSPACE_DIR = BASE_DIR
 
+_padron_lock = threading.Lock()
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA busy_timeout = 15000")
+    except Exception:
+        pass
     return conn
 
 def get_padron_db():
     if not os.path.exists(PADRON_DB_PATH):
-        partes = sorted(glob.glob(PADRON_DB_PATH + ".part*"))
-        if partes:
-            try:
-                with open(PADRON_DB_PATH, "wb") as f_out:
-                    for p in partes:
-                        with open(p, "rb") as f_in:
-                            f_out.write(f_in.read())
-                print(f"Padron de postes auto-reensamblado con exito desde {len(partes)} partes.")
-            except Exception as e:
-                print("Error reensamblando padron de postes:", e)
-                return None
-        else:
-            return None
+        with _padron_lock:
+            if not os.path.exists(PADRON_DB_PATH):
+                partes = sorted(glob.glob(PADRON_DB_PATH + ".part*"))
+                if partes:
+                    try:
+                        with open(PADRON_DB_PATH, "wb") as f_out:
+                            for p in partes:
+                                with open(p, "rb") as f_in:
+                                    f_out.write(f_in.read())
+                        print(f"Padron de postes auto-reensamblado con exito desde {len(partes)} partes.")
+                    except Exception as e:
+                        print("Error reensamblando padron de postes:", e)
+                        return None
+                else:
+                    return None
     try:
-        conn = sqlite3.connect(f"file:{PADRON_DB_PATH}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{PADRON_DB_PATH}?mode=ro", uri=True, timeout=15.0)
         conn.row_factory = sqlite3.Row
         return conn
     except Exception:
@@ -225,9 +235,9 @@ def _backup_worker():
             since_write = time.time() - _last_write_ts
             since_backup = time.time() - _last_backup_ts
         if dirty:
-            if since_write >= 180:
+            if since_write >= 300:
                 backup_db_to_github(reason="idle")
-            elif since_backup >= 300:
+            elif since_backup >= 900:
                 backup_db_to_github(reason="periodic")
 
 restore_db_from_github_if_newer()
@@ -239,6 +249,10 @@ def init_db_schema():
         cols = [r[1] for r in cur.execute("PRAGMA table_info(casos)").fetchall()]
         if "consecutivo_linea" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_linea INTEGER DEFAULT 0")
+        if "consecutivo_aprobado" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_aprobado INTEGER DEFAULT 0")
+        if "consecutivo_aprobado_fecha" not in cols:
+            cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_aprobado_fecha TEXT")
         if "consecutivo_impreso" not in cols:
             cur.execute("ALTER TABLE casos ADD COLUMN consecutivo_impreso INTEGER DEFAULT 0")
         if "consecutivo_fecha_impresion" not in cols:
@@ -274,6 +288,17 @@ def init_db_schema():
                 VALUES (?, ?, ?, '1234', 1, 'APOYO')
                 ON CONFLICT(id) DO UPDATE SET grupo = 'APOYO'
             """, (i, f"APOYO {num_str}", f"AP{num_str} - APOYO {i-15}"))
+
+        # Índices de aceleración extrema para evitar bloqueos con múltiples operadores
+        cur.execute("PRAGMA journal_mode = WAL")
+        cur.execute("PRAGMA synchronous = NORMAL")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_op_estado ON casos(operador_id, estado_auditoria)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_consecutivo ON casos(consecutivo_linea, consecutivo_impreso)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_cons_aprob ON casos(consecutivo_linea, consecutivo_aprobado, consecutivo_impreso)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_devuelto ON casos(devuelto_flag, estado_auditoria)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_desestimado ON casos(desestimado_verificado, desestimado_aprobado)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_actualizado ON casos(actualizado_en)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_casos_fecha_cont ON casos(fecha_contacto)")
         conn.commit()
     except Exception as e:
         print("Schema init notice:", e)
@@ -746,22 +771,26 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             cur.execute("""
             SELECT c.*, o.nombre as operador_nombre
             FROM casos c
-            JOIN operadores o ON c.operador_id = o.id
+            LEFT JOIN operadores o ON c.operador_id = o.id
             WHERE c.consecutivo_linea = 1
-            ORDER BY c.consecutivo_impreso ASC, c.actualizado_en DESC, c.id DESC
+            ORDER BY c.consecutivo_impreso ASC, c.consecutivo_aprobado DESC, c.actualizado_en DESC, c.id DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
             conn.close()
             self.send_json(rows)
 
-        # Consecutivos en Línea: Contador de Pendientes
+        # Consecutivos en Línea: Contador de Pendientes y Aprobados
         elif path == "/api/consecutivos_pendientes_count":
-            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
+            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND (consecutivo_aprobado = 0 OR consecutivo_aprobado IS NULL) AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
             p = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND consecutivo_aprobado = 1 AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
+            aprob = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND consecutivo_impreso = 1")
+            desp = cur.fetchone()[0]
             cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1")
             tot = cur.fetchone()[0]
             conn.close()
-            self.send_json({"pendientes": p, "total": tot})
+            self.send_json({"pendientes": p, "aprobados": aprob, "despachados": desp, "total": tot})
 
         # Buscar postes o medidores predictivos en el padrón
         elif path == "/api/buscar_postes":
@@ -831,23 +860,65 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
         # Exportar Consecutivos en Línea a Excel (Descarga directa y marca impresos)
         elif path == "/api/export_consecutivos_linea":
             import io
-            tipo = query.get("tipo", ["pendientes"])[0]
+            tipo = query.get("tipo", ["aprobados"])[0]
             now_dt = datetime.now()
             fecha_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
             fecha_tag = now_dt.strftime("%Y%m%d_%H%M%S")
 
             where_sql = "WHERE c.consecutivo_linea = 1"
-            if tipo == "pendientes":
-                where_sql += " AND (c.consecutivo_impreso = 0 OR c.consecutivo_impreso IS NULL)"
+            if tipo in ["pendientes", "aprobados"]:
+                where_sql += " AND c.consecutivo_aprobado = 1 AND (c.consecutivo_impreso = 0 OR c.consecutivo_impreso IS NULL)"
+            elif tipo == "hoy":
+                today_tag = now_dt.strftime("%Y-%m-%d")
+                where_sql += f" AND (c.actualizado_en LIKE '{today_tag}%' OR c.consecutivo_fecha_impresion LIKE '{today_tag}%' OR c.fecha_contacto = '{today_tag}' OR c.consecutivo_aprobado_fecha LIKE '{today_tag}%')"
+            elif tipo == "todos":
+                pass
 
             cur.execute(f"""
             SELECT c.*, o.nombre as operador_nombre
             FROM casos c
-            JOIN operadores o ON c.operador_id = o.id
+            LEFT JOIN operadores o ON c.operador_id = o.id
             {where_sql}
             ORDER BY c.actualizado_en DESC, c.municipio, c.parroquia
             """)
             rows = cur.fetchall()
+
+            # Protección: Si no hay casos, responder con aviso amigable para no descargar un archivo vacío
+            if len(rows) == 0:
+                conn.close()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                html_err = f"""
+                <!DOCTYPE html>
+                <html lang="es">
+                <head>
+                    <meta charset="utf-8">
+                    <title>Sin Casos para Descargar</title>
+                    <style>
+                        body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b1329; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                        .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 40px 30px; max-width: 500px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }}
+                        h2 {{ color: #f59e0b; margin: 15px 0 10px; font-size: 22px; }}
+                        p {{ color: #94a3b8; font-size: 14px; line-height: 1.6; }}
+                        .btn {{ background: #f59e0b; color: #020617; font-weight: 800; border: none; padding: 12px 24px; border-radius: 12px; cursor: pointer; margin-top: 20px; font-size: 13px; }}
+                        .btn:hover {{ background: #fbbf24; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div style="font-size: 48px;">⚠️</div>
+                        <h2>No Hay Casos para Descargar</h2>
+                        <p>
+                            No se encontraron casos en estado <b>APROBADO</b> pendientes de descarga ({tipo}).<br><br>
+                            Recuerda ingresar a la pestaña <b>Consecutivos</b> en el panel de Supervisor y presionar el botón <b>✅ Aceptar</b> en los casos verificados antes de generar el reporte.
+                        </p>
+                        <button class="btn" onclick="window.close()">ENTENDIDO - CERRAR</button>
+                    </div>
+                </body>
+                </html>
+                """
+                self.wfile.write(html_err.encode("utf-8"))
+                return
 
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -904,7 +975,7 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
                 col_letter = get_column_letter(col[0].column)
                 ws.column_dimensions[col_letter].width = min(max(max_len + 3, 11), 60)
 
-            if tipo == "pendientes" and case_ids_to_mark:
+            if tipo in ["pendientes", "aprobados"] and case_ids_to_mark:
                 placeholders = ",".join(["?"] * len(case_ids_to_mark))
                 cur.execute(f"""
                 UPDATE casos SET 
@@ -1440,6 +1511,55 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.commit()
             conn.close()
             self.send_json({"success": True})
+
+        # Aprobar caso para consecutivo de campo (Visto Bueno del Supervisor)
+        elif path == "/api/supervisor/aprobar_consecutivo":
+            caso_id = data.get("caso_id")
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cur.execute("""
+            UPDATE casos SET 
+                consecutivo_aprobado = 1,
+                consecutivo_aprobado_fecha = ?
+            WHERE id = ?
+            """, (now_str, caso_id))
+            cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'CONSECUTIVO_APROBADO', ?)",
+                        (f"Supervisor aprobó caso #{caso_id} para consecutivo de campo",))
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True})
+
+        # Revertir aprobación de caso para consecutivo
+        elif path == "/api/supervisor/revertir_consecutivo":
+            caso_id = data.get("caso_id")
+            cur.execute("""
+            UPDATE casos SET 
+                consecutivo_aprobado = 0,
+                consecutivo_aprobado_fecha = NULL
+            WHERE id = ?
+            """, (caso_id,))
+            cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'CONSECUTIVO_REVERTIDO', ?)",
+                        (f"Supervisor revirtió aprobación del caso #{caso_id} de consecutivos",))
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True})
+
+        # Aprobar en lote todos los casos pendientes para consecutivo
+        elif path == "/api/supervisor/aprobar_todos_consecutivos":
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cur.execute("""
+            UPDATE casos SET 
+                consecutivo_aprobado = 1,
+                consecutivo_aprobado_fecha = ?
+            WHERE consecutivo_linea = 1 
+              AND (consecutivo_aprobado = 0 OR consecutivo_aprobado IS NULL) 
+              AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)
+            """, (now_str,))
+            afectados = cur.rowcount
+            cur.execute("INSERT INTO logs (operador_id, tipo_accion, detalle) VALUES (0, 'CONSECUTIVOS_APROBAR_TODOS', ?)",
+                        (f"Supervisor aprobó {afectados} casos pendientes para consecutivo de campo",))
+            conn.commit()
+            conn.close()
+            self.send_json({"success": True, "count": afectados})
 
         # Modificar nombre / estatus del operador
         elif path == "/api/supervisor/update_operator":
