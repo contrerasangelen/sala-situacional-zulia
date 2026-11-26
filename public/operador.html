@@ -408,7 +408,7 @@
                         : 'DEVUELTO';
                     badgeHtml = `<span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white animate-pulse">⚠️ ${devTxt}</span>`;
                 }
-                else if (isReasignado && cli.tipo_contacto.includes('SIN COMUNIC')) badgeHtml = '<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-600/30 border border-amber-400 text-amber-200">📵 SIN COMUNICACIÓN</span>';
+                else if (isReasignado && (cli.tipo_contacto.includes('SIN COMUNIC') || cli.tipo_contacto.includes('SIN_COMUNIC'))) badgeHtml = '<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-600/30 border border-amber-400 text-amber-200">📵 SIN COMUNICACIÓN</span>';
                 else if (isReasignado) badgeHtml = '<span class="px-2 py-0.5 rounded text-[10px] font-black bg-purple-900 border border-purple-500 text-purple-200">CASO REASIGNADO</span>';
                 else if (isReintento) badgeHtml = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">REINTENTO</span>';
                 else badgeHtml = '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300">NUEVO</span>';
