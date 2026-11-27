@@ -284,6 +284,22 @@
     <!-- PESTAÑA: CONSECUTIVOS EN LÍNEA Y PEGASUS -->
     <section id="tab-consecutivos" class="hidden space-y-4">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow">
+
+            <!-- TOGGLE DE VISTAS: Activos / Historial / Todo -->
+            <div class="flex flex-wrap items-center gap-3 mb-4">
+                <div class="flex bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1">
+                    <button id="btn-vista-activos" onclick="setConsVista('activos')" class="px-4 py-1.5 rounded-lg text-xs font-black bg-amber-500 text-slate-950 shadow transition">
+                        ⏳ Bandeja Activa
+                    </button>
+                    <button id="btn-vista-historial" onclick="setConsVista('historial')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                        📜 Historial Despachados
+                    </button>
+                    <button id="btn-vista-todos" onclick="setConsVista('todos')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                        📂 Ver Todo
+                    </button>
+                </div>
+                <span id="label-vista-cons" class="text-xs text-amber-400 font-semibold">Mostrando: casos pendientes y aprobados (no despachados)</span>
+            </div>
             
             <div class="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 mb-4 gap-3">
                 <div>
@@ -296,7 +312,7 @@
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2 items-center">
-                    <button onclick="aprobarTodosConsecutivos()" class="px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-1.5 transition">
+                    <button id="btn-aprobar-todos-cons" onclick="aprobarTodosConsecutivos()" class="px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-1.5 transition">
                         ✅ Aprobar Todos los Pendientes
                     </button>
                     <button onclick="descargarConsecutivosLinea('aprobados')" class="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow flex items-center gap-1.5 transition">
@@ -565,6 +581,34 @@
 
         
         window.consecutivosAprobadosCount = 0;
+        window.consVistaActual = 'activos'; // 'activos' | 'historial' | 'todos'
+
+        function setConsVista(vista) {
+            window.consVistaActual = vista;
+            const labels = {
+                activos: 'Mostrando: casos pendientes y aprobados (no despachados)',
+                historial: 'Mostrando: casos ya despachados a cuadrilla',
+                todos: 'Mostrando: todos los casos registrados'
+            };
+            const lbl = document.getElementById('label-vista-cons');
+            if (lbl) lbl.textContent = labels[vista] || '';
+
+            // Resaltar botón activo
+            ['activos','historial','todos'].forEach(v => {
+                const btn = document.getElementById('btn-vista-' + v);
+                if (!btn) return;
+                if (v === vista) {
+                    btn.className = 'px-4 py-1.5 rounded-lg text-xs font-black bg-amber-500 text-slate-950 shadow transition';
+                } else {
+                    btn.className = 'px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition';
+                }
+            });
+            // Ocultar/mostrar botón "Aprobar Todos" solo en vista activos
+            const btnAprob = document.getElementById('btn-aprobar-todos-cons');
+            if (btnAprob) btnAprob.style.display = vista === 'activos' ? '' : 'none';
+
+            loadConsecutivosTable();
+        }
 
         function descargarConsecutivosLinea(tipo = 'aprobados') {
             if (tipo === 'aprobados' || tipo === 'pendientes') {
@@ -1451,14 +1495,15 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
         async function loadConsecutivosTable() {
             try {
                 const res = await fetch('/api/consecutivos_list');
-                const data = await res.json();
+                const dataFull = await res.json();
                 const tbody = document.getElementById('consecutivos-table-body');
                 if (!tbody) return;
                 tbody.innerHTML = '';
 
-                const pendientes = data.filter(d => (!d.consecutivo_impreso || d.consecutivo_impreso == 0) && (!d.consecutivo_aprobado || d.consecutivo_aprobado == 0)).length;
-                const aprobados = data.filter(d => (!d.consecutivo_impreso || d.consecutivo_impreso == 0) && d.consecutivo_aprobado == 1).length;
-                const despachados = data.filter(d => d.consecutivo_impreso == 1).length;
+                // Contadores SIEMPRE sobre el total completo
+                const pendientes = dataFull.filter(d => (!d.consecutivo_impreso || d.consecutivo_impreso == 0) && (!d.consecutivo_aprobado || d.consecutivo_aprobado == 0)).length;
+                const aprobados = dataFull.filter(d => (!d.consecutivo_impreso || d.consecutivo_impreso == 0) && d.consecutivo_aprobado == 1).length;
+                const despachados = dataFull.filter(d => d.consecutivo_impreso == 1).length;
 
                 window.consecutivosAprobadosCount = aprobados;
 
@@ -1474,13 +1519,28 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
                 const bDesp = document.getElementById('badge-cons-despachados');
                 if (bDesp) bDesp.innerText = despachados;
                 const bTot = document.getElementById('badge-cons-total');
-                if (bTot) bTot.innerText = data.length;
+                if (bTot) bTot.innerText = dataFull.length;
+
+                // Filtrar según vista actual
+                let data = dataFull;
+                const vista = window.consVistaActual || 'activos';
+                if (vista === 'activos') {
+                    data = dataFull.filter(d => !d.consecutivo_impreso || d.consecutivo_impreso == 0);
+                } else if (vista === 'historial') {
+                    data = dataFull.filter(d => d.consecutivo_impreso == 1);
+                }
+                // 'todos' → sin filtro
 
                 if (data.length === 0) {
+                    const mensajes = {
+                        activos: 'No hay casos activos pendientes por atender.',
+                        historial: 'No hay casos despachados aún hoy.',
+                        todos: 'No hay casos marcados para consecutivo en línea o Pegasus.'
+                    };
                     tbody.innerHTML = `
                         <tr>
                             <td colspan="10" class="p-8 text-center text-xs text-slate-400 font-medium">
-                                No hay casos marcados para consecutivo en línea o Pegasus.
+                                ${mensajes[vista] || 'Sin casos.'}
                             </td>
                         </tr>
                     `;
@@ -1489,10 +1549,14 @@ El caso se retirará de las alertas de inconsistencia y quedará consolidado com
 
                 data.forEach(r => {
                     const tr = document.createElement('tr');
-                    tr.className = "hover:bg-slate-800/40 transition";
                     const isDespachado = r.consecutivo_impreso == 1;
                     const isAprobado = r.consecutivo_aprobado == 1 && !isDespachado;
                     const isPendiente = !isAprobado && !isDespachado;
+                    if (isDespachado) {
+                        tr.className = "hover:bg-emerald-900/20 transition bg-emerald-900/10 opacity-75";
+                    } else {
+                        tr.className = "hover:bg-slate-800/40 transition";
+                    }
 
                     let statusBadge = '';
                     if (isDespachado) {

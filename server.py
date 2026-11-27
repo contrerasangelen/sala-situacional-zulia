@@ -766,13 +766,15 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             conn.close()
             self.send_json(rows)
 
-        # Listar casos de Consecutivos en Línea / Pegasus
+        # Listar casos de Consecutivos en Línea / Pegasus y Casos Por Atender
         elif path == "/api/consecutivos_list":
-            cur.execute("""
+            inc_todos = query.get("incluir_todos", ["0"])[0] == "1"
+            where_clause = "WHERE (c.consecutivo_linea = 1 OR c.estatus_llamada = 'POR ATENDER')" if inc_todos else "WHERE c.consecutivo_linea = 1"
+            cur.execute(f"""
             SELECT c.*, o.nombre as operador_nombre
             FROM casos c
             LEFT JOIN operadores o ON c.operador_id = o.id
-            WHERE c.consecutivo_linea = 1
+            {where_clause}
             ORDER BY c.consecutivo_impreso ASC, c.consecutivo_aprobado DESC, c.actualizado_en DESC, c.id DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
@@ -781,13 +783,15 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
 
         # Consecutivos en Línea: Contador de Pendientes y Aprobados
         elif path == "/api/consecutivos_pendientes_count":
-            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND (consecutivo_aprobado = 0 OR consecutivo_aprobado IS NULL) AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
+            inc_todos = query.get("incluir_todos", ["0"])[0] == "1"
+            base_where = "(consecutivo_linea = 1 OR estatus_llamada = 'POR ATENDER')" if inc_todos else "consecutivo_linea = 1"
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE {base_where} AND (consecutivo_aprobado = 0 OR consecutivo_aprobado IS NULL) AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
             p = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND consecutivo_aprobado = 1 AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE {base_where} AND consecutivo_aprobado = 1 AND (consecutivo_impreso = 0 OR consecutivo_impreso IS NULL)")
             aprob = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1 AND consecutivo_impreso = 1")
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE {base_where} AND consecutivo_impreso = 1")
             desp = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM casos WHERE consecutivo_linea = 1")
+            cur.execute(f"SELECT COUNT(*) FROM casos WHERE {base_where}")
             tot = cur.fetchone()[0]
             conn.close()
             self.send_json({"pendientes": p, "aprobados": aprob, "despachados": desp, "total": tot})
@@ -865,9 +869,11 @@ class SituationalRoomHandler(http.server.SimpleHTTPRequestHandler):
             fecha_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
             fecha_tag = now_dt.strftime("%Y%m%d_%H%M%S")
 
-            where_sql = "WHERE c.consecutivo_linea = 1"
+            inc_todos = query.get("incluir_todos", ["0"])[0] == "1"
+            base_where = "(c.consecutivo_linea = 1 OR c.estatus_llamada = 'POR ATENDER')" if inc_todos else "c.consecutivo_linea = 1"
+            where_sql = f"WHERE {base_where}"
             if tipo in ["pendientes", "aprobados"]:
-                where_sql += " AND c.consecutivo_aprobado = 1 AND (c.consecutivo_impreso = 0 OR c.consecutivo_impreso IS NULL)"
+                where_sql += " AND (c.consecutivo_impreso = 0 OR c.consecutivo_impreso IS NULL)"
             elif tipo == "hoy":
                 today_tag = now_dt.strftime("%Y-%m-%d")
                 where_sql += f" AND (c.actualizado_en LIKE '{today_tag}%' OR c.consecutivo_fecha_impresion LIKE '{today_tag}%' OR c.fecha_contacto = '{today_tag}' OR c.consecutivo_aprobado_fecha LIKE '{today_tag}%')"
